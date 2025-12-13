@@ -203,7 +203,9 @@ class SimConfig:
     # Simulation parameters
     num_days: int = 100
     seed_energy: float = 1.0
-    investment_rate: float = 0.3  # Fraction of energy to invest in growth each day
+    investment_rate: float = 0.3  # Maximum fraction of energy to invest in growth each day
+    investment_energy_threshold: float = 0.3  # Energy level where investment rate is 50%
+    investment_steepness: float = 5.0  # How sharply investment gates at low energy
 
     # Photosynthesis parameters
     p_max: float = 0.5  # Maximum photosynthesis rate per unit leaf
@@ -279,7 +281,9 @@ class SimConfig:
     # This makes drought actually force root investment
     transpiration_rate: float = 0.15  # Water lost per unit leaf per unit light
 
-    # Seed production
+    # Flowering and seed production
+    flowering_maturity: float = 0.4  # Season progress (0-1) before flowers can grow
+    flowering_trunk_threshold: float = 0.2  # Minimum trunk to support flowers
     seed_energy_threshold: float = 0.5  # Minimum energy to produce seeds
     seed_conversion: float = 10.0  # Seeds per unit flower biomass
 

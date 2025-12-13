@@ -65,6 +65,67 @@ class Trajectory:
             "flowers": jnp.array([float(a.flowers) for a in self.allocations]),
         }
 
+    def get_scalar_summary(self) -> dict[str, float]:
+        """
+        Compute scalar diagnostic summary of the simulation.
+
+        Returns a dictionary with key metrics for quick evaluation:
+        - Seeds: Final seed count (primary fitness metric)
+        - FinalBiomass: Total biomass at end of season
+        - FinalEnergy: Energy reserves at end
+        - PeakEnergy: Maximum energy achieved during season
+        - MinEnergy: Minimum energy during season
+        - DaysAtZero: Number of days with energy < 0.01 (stress indicator)
+        - FinalTrunk: Trunk biomass (structural investment)
+        - FinalFlowers: Flower biomass (reproductive investment)
+        - MeanLight/Moisture/Wind: Average environmental conditions
+        """
+        state_arrays = self.get_state_arrays()
+        energy = state_arrays["energy"]
+
+        # Final state metrics
+        final_state = self.states[-1]
+        final_biomass = float(final_state.total_biomass())
+
+        # Energy dynamics
+        peak_energy = float(jnp.max(energy))
+        min_energy = float(jnp.min(energy))
+        days_at_zero = int(jnp.sum(energy < 0.01))
+
+        # Environmental averages
+        mean_light = sum(self.light_history) / len(self.light_history)
+        mean_moisture = sum(self.moisture_history) / len(self.moisture_history)
+        mean_wind = sum(self.wind_history) / len(self.wind_history)
+
+        return {
+            "Seeds": float(self.seeds),
+            "FinalBiomass": final_biomass,
+            "FinalEnergy": float(final_state.energy),
+            "PeakEnergy": peak_energy,
+            "MinEnergy": min_energy,
+            "DaysAtZero": days_at_zero,
+            "FinalTrunk": float(final_state.trunk),
+            "FinalFlowers": float(final_state.flowers),
+            "FinalRoots": float(final_state.roots),
+            "FinalLeaves": float(final_state.leaves),
+            "MeanLight": mean_light,
+            "MeanMoisture": mean_moisture,
+            "MeanWind": mean_wind,
+        }
+
+    def print_summary(self) -> None:
+        """Print a formatted summary table to stdout."""
+        summary = self.get_scalar_summary()
+        print("\n" + "=" * 40)
+        print("SIMULATION SUMMARY")
+        print("=" * 40)
+        for key, value in summary.items():
+            if isinstance(value, int) or key == "DaysAtZero":
+                print(f"{key:20s}: {int(value):>10d}")
+            else:
+                print(f"{key:20s}: {value:>10.3f}")
+        print("=" * 40)
+
 
 def run_season(
     config: SimConfig,
@@ -117,6 +178,7 @@ def run_season(
             moisture=float(moisture),
             wind=float(wind),
             config=config,
+            day=day,
         )
         states.append(state)
 

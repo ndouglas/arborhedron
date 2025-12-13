@@ -131,6 +131,58 @@ class TestTrajectory:
 
         assert len(trajectory.allocations) == config.num_days
 
+    def test_scalar_summary_structure(self) -> None:
+        """Scalar summary should have all expected keys."""
+        config = SimConfig(num_days=50)
+        climate = ClimateConfig.mild()
+        policy = policies.baseline_policy
+
+        trajectory = rollout.run_season(
+            config=config,
+            climate=climate,
+            policy=policy,
+        )
+
+        summary = trajectory.get_scalar_summary()
+        expected_keys = [
+            "Seeds",
+            "FinalBiomass",
+            "FinalEnergy",
+            "PeakEnergy",
+            "MinEnergy",
+            "DaysAtZero",
+            "FinalTrunk",
+            "FinalFlowers",
+            "FinalRoots",
+            "FinalLeaves",
+            "MeanLight",
+            "MeanMoisture",
+            "MeanWind",
+        ]
+        for key in expected_keys:
+            assert key in summary
+            assert isinstance(summary[key], (int, float))
+
+    def test_scalar_summary_values_consistent(self) -> None:
+        """Scalar summary values should match trajectory data."""
+        config = SimConfig(num_days=50)
+        climate = ClimateConfig.mild()
+        policy = policies.baseline_policy
+
+        trajectory = rollout.run_season(
+            config=config,
+            climate=climate,
+            policy=policy,
+        )
+
+        summary = trajectory.get_scalar_summary()
+        final_state = trajectory.states[-1]
+
+        # Check consistency
+        assert abs(summary["Seeds"] - float(trajectory.seeds)) < 1e-6
+        assert abs(summary["FinalEnergy"] - float(final_state.energy)) < 1e-6
+        assert abs(summary["FinalTrunk"] - float(final_state.trunk)) < 1e-6
+
 
 class TestPolicyComparison:
     """Tests comparing different policies."""

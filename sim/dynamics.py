@@ -26,6 +26,7 @@ All operations are differentiable for gradient-based optimization.
 
 import jax.numpy as jnp
 from jax import Array
+from jax.nn import sigmoid as jax_sigmoid
 
 from sim import surrogates
 from sim.config import Allocation, SimConfig, TreeState
@@ -38,6 +39,7 @@ def step(
     moisture: float,
     wind: float,
     config: SimConfig,
+    day: int = 50,
 ) -> TreeState:
     """
     Perform one day of tree growth simulation.
@@ -49,6 +51,7 @@ def step(
         moisture: Soil moisture [0, 1]
         wind: Wind speed [0, 1]
         config: Simulation configuration
+        day: Current day (for maturity gating)
 
     Returns:
         New tree state after one day
@@ -120,9 +123,14 @@ def step(
     energy = energy - maintenance
 
     # 6. Resource allocation and growth
-    # Only invest a fraction of energy (the rest is banked)
+    # Investment is gated by energy level to prevent "suicide investing"
+    # At low energy, reduce investment to conserve reserves
     available_energy = jnp.maximum(energy, 0.0)
-    energy_to_invest = config.investment_rate * available_energy
+    investment_gate = jax_sigmoid(
+        config.investment_steepness * (available_energy - config.investment_energy_threshold)
+    )
+    effective_investment_rate = config.investment_rate * investment_gate
+    energy_to_invest = effective_investment_rate * available_energy
 
     # Growth efficiency depends on water and nutrient availability
     # Each compartment has a base efficiency modified by resource availability
@@ -141,11 +149,26 @@ def step(
         growth = invested * efficiency
         return growth, invested
 
+    # Flower gating: prevent flowering before maturity or without trunk support
+    # This prevents "suicide flowering" exploits where policy dumps all energy into flowers early
+    progress = day / config.num_days
+    maturity_gate = jax_sigmoid(
+        10.0 * (progress - config.flowering_maturity)  # Sharp transition at maturity
+    )
+    trunk_gate = jax_sigmoid(
+        10.0 * (trunk - config.flowering_trunk_threshold)  # Sharp transition at trunk threshold
+    )
+    flower_gate = maturity_gate * trunk_gate
+
+    # Gated flower allocation - any blocked flower energy goes nowhere (wasted)
+    # This creates a strong incentive to NOT allocate to flowers until ready
+    gated_flower_alloc = allocation.flowers * flower_gate
+
     root_growth, root_cost = compute_growth(allocation.roots, config.eta_root)
     trunk_growth, trunk_cost = compute_growth(allocation.trunk, config.eta_trunk)
     shoot_growth, shoot_cost = compute_growth(allocation.shoots, config.eta_shoot)
     leaf_growth, leaf_cost = compute_growth(allocation.leaves, config.eta_leaf)
-    flower_growth, flower_cost = compute_growth(allocation.flowers, config.eta_flower)
+    flower_growth, flower_cost = compute_growth(gated_flower_alloc, config.eta_flower)
 
     # Apply growth
     roots = roots + root_growth
