@@ -71,6 +71,7 @@ def step(
     shoots = state.shoots
     leaves = state.leaves
     flowers = state.flowers
+    fruit = state.fruit
     soil_water = state.soil_water
 
     # 0. Soil water reservoir dynamics
@@ -307,6 +308,63 @@ def step(
     )
     leaves = leaves * (1.0 - drought_leaf_damage)
 
+    # 8e. Fruit dynamics: flowers → fruit → seeds
+    # This creates the "bonsai economics" risk/reward:
+    # - Flowers convert to fruit only when tree is mature
+    # - Fruit conversion is SATURATING (diminishing returns to more flowers)
+    # - Fruit conversion requires RESOURCES (leaves, water, light)
+    # - Fruit can be destroyed by stress (wind, drought)
+    # - Seeds = integral of fruit over season
+
+    # Compute maturity gate: m(t) = σ(k(T-T0)) · σ(k(L-L0)) · σ(k(R-R0))
+    # Only mature trees can convert flowers to fruit effectively
+    maturity = surrogates.fruit_maturity_gate(
+        trunk=trunk,
+        leaves=leaves,
+        roots=roots,
+        trunk_threshold=config.fruit_maturity_trunk,
+        leaves_threshold=config.fruit_maturity_leaves,
+        roots_threshold=config.fruit_maturity_roots,
+        steepness=config.fruit_maturity_steepness,
+    )
+
+    # Fruit accumulation with SATURATION and RESOURCE GATING:
+    # dQ/dt = α · m(t) · (F/(F+K)) · f_L(L) · f_W(W) · f_I(I) - decay - damage
+    #
+    # Key insight: This forces policy to:
+    # 1. Not go "all-in" on flowers (saturation makes 80% barely better than 40%)
+    # 2. Keep infrastructure alive (need leaves/water/light to cash in on flowers)
+    fruit_gain = surrogates.fruit_formation_rate(
+        flowers=flowers,
+        leaves=leaves,
+        water=water,
+        light=light,
+        maturity=maturity,
+        base_rate=config.fruit_conversion_rate,
+        saturation_k=config.fruit_saturation_k,
+        k_leaf=config.fruit_leaf_k,
+        k_water=config.fruit_water_k,
+        k_light=config.fruit_light_k,
+    )
+
+    # Natural fruit decay (ripening, falling, etc.)
+    fruit_decay = config.fruit_decay_rate * fruit
+
+    # Fruit stress damage: wind and drought can destroy developing fruit
+    fruit_damage_rate = surrogates.fruit_stress_damage(
+        wind=wind,
+        water=water,
+        wind_vulnerability=config.fruit_wind_vulnerability,
+        drought_vulnerability=config.fruit_drought_vulnerability,
+        drought_threshold=config.fruit_drought_threshold,
+        wind_threshold=config.wind_threshold,
+        wind_steepness=config.wind_steepness,
+    )
+    fruit_stress_loss = fruit_damage_rate * fruit
+
+    # Update fruit
+    fruit = fruit + fruit_gain - fruit_decay - fruit_stress_loss
+
     # 9. Structural penalty
     load = surrogates.compute_load(
         leaves=leaves,
@@ -341,6 +399,7 @@ def step(
     shoots = jnp.maximum(shoots, 0.0)
     leaves = jnp.maximum(leaves, 0.0)
     flowers = jnp.maximum(flowers, 0.0)
+    fruit = jnp.maximum(fruit, 0.0)
     soil_water = jnp.maximum(soil_water, 0.0)
 
     return TreeState(
@@ -352,6 +411,7 @@ def step(
         shoots=shoots,
         leaves=leaves,
         flowers=flowers,
+        fruit=fruit,
         soil_water=soil_water,
     )
 
@@ -548,13 +608,10 @@ def compute_seeds_integral(
     """
     Compute seed production from integrated flower-days.
 
-    This rewards SUSTAINED flowering rather than a last-minute dump.
-    Biologically: flowers need time to mature, be pollinated, and set fruit.
+    DEPRECATED: Use compute_seeds_from_fruit instead.
+    This is kept for backwards compatibility but fruit-based seeds are preferred.
 
     Seeds = conversion * flower_integral * sigmoid(energy - threshold)
-
-    The flower_integral is the sum of flower biomass over all days,
-    representing "flower-days" of reproductive investment.
 
     Args:
         flower_integral: Sum of flower biomass over season (flower-days)
@@ -564,12 +621,46 @@ def compute_seeds_integral(
     Returns:
         Number of seeds produced
     """
-    # Normalize by season length so the conversion rate stays meaningful
-    # This makes flower_integral comparable to "average flower biomass"
     normalized_integral = flower_integral / config.num_days
-
     return surrogates.seed_production(
         flowers=normalized_integral,
+        energy=final_energy,
+        energy_threshold=config.seed_energy_threshold,
+        conversion=config.seed_conversion,
+    )
+
+
+def compute_seeds_from_fruit(
+    fruit_integral: Array,
+    final_energy: Array,
+    config: SimConfig,
+) -> Array:
+    """
+    Compute seed production from integrated fruit (the proper method).
+
+    Seeds = conversion * (fruit_integral / num_days) * energy_gate
+
+    This is the correct reward function:
+    - Flowers must convert to fruit (requires maturity)
+    - Fruit can be damaged by stress (gambling mechanic)
+    - Seeds = integral of fruit (rewards sustained, protected reproduction)
+
+    The fruit_integral is the sum of fruit biomass over all days.
+    Dividing by num_days normalizes to "average fruit" for interpretability.
+
+    Args:
+        fruit_integral: Sum of fruit biomass over season (fruit-days)
+        final_energy: Final energy level (gates seed viability)
+        config: Simulation configuration
+
+    Returns:
+        Number of seeds produced
+    """
+    # Normalize by season length
+    normalized_integral = fruit_integral / config.num_days
+
+    return surrogates.seed_production(
+        flowers=normalized_integral,  # reusing flowers param, it's just biomass
         energy=final_energy,
         energy_threshold=config.seed_energy_threshold,
         conversion=config.seed_conversion,

@@ -472,3 +472,108 @@ def make_neural_policy_fn(
         return apply_neural_policy(policy, state, day, num_days, light, moisture, wind_val)
 
     return policy_fn
+
+
+# =============================================================================
+# SMART BASELINE (for fair comparison with neural policy)
+# =============================================================================
+
+
+def smart_baseline_policy(
+    state: TreeState,
+    day: int,
+    num_days: int,
+    wind: float = 0.0,
+    # Maturity thresholds (should match config)
+    trunk_threshold: float = 0.15,
+    leaves_threshold: float = 0.25,
+    roots_threshold: float = 0.15,
+    # Energy threshold for safety
+    energy_threshold: float = 0.3,
+) -> Allocation:
+    """
+    Smart baseline policy with maturity awareness and resource maintenance.
+
+    This is a FAIR comparison baseline that:
+    1. Uses the same maturity gate logic as the fruit dynamics
+    2. Maintains leaves/roots above thresholds during reproduction
+    3. Adapts to wind by reducing flower allocation when windy
+    4. Doesn't go "all-in" on flowers (knows about diminishing returns)
+
+    Strategy:
+    - Build infrastructure until mature (trunk, leaves, roots above thresholds)
+    - Once mature AND energy is healthy, allocate to flowers
+    - BUT keep leaves and roots alive (50% infrastructure / 50% flowers)
+    - Reduce flower allocation when wind is high
+
+    This baseline should produce more seeds than the naive baseline because:
+    - It knows about maturity requirements
+    - It maintains infrastructure during reproduction
+    - It doesn't waste flowers when windy
+
+    If neural policy can't beat THIS baseline, it's not learning anything useful.
+
+    Args:
+        state: Current tree state
+        day: Current day
+        num_days: Total season length
+        wind: Current wind level [0, 1]
+        trunk_threshold: Minimum trunk for fruit maturity
+        leaves_threshold: Minimum leaves for fruit maturity
+        roots_threshold: Minimum roots for fruit maturity
+        energy_threshold: Minimum energy before flowering
+
+    Returns:
+        Allocation for this timestep
+    """
+    progress = day / num_days
+
+    # Check maturity requirements
+    trunk_ready = float(state.trunk) >= trunk_threshold
+    leaves_ready = float(state.leaves) >= leaves_threshold
+    roots_ready = float(state.roots) >= roots_threshold
+    energy_healthy = float(state.energy) >= energy_threshold
+
+    # All conditions met for flowering
+    is_mature = trunk_ready and leaves_ready and roots_ready
+
+    if not is_mature:
+        # BUILD PHASE: Focus on infrastructure
+        # Priority: leaves (photosynthesis) > roots (water) > trunk (maturity) > shoots
+        if not leaves_ready:
+            # Leaves first for energy production
+            logits = jnp.array([1.0, 0.5, 1.5, 2.5, -2.0])  # Heavy leaves, some shoots
+        elif not roots_ready:
+            # Roots for water
+            logits = jnp.array([2.5, 0.5, 1.0, 1.5, -2.0])  # Heavy roots
+        else:
+            # Need trunk for maturity
+            logits = jnp.array([1.0, 2.5, 1.0, 1.5, -2.0])  # Heavy trunk
+
+    elif not energy_healthy:
+        # LOW ENERGY: Rebuild resources before flowering
+        logits = jnp.array([2.0, 0.5, 1.0, 2.0, -1.0])  # Roots + leaves for recovery
+
+    else:
+        # REPRODUCTIVE PHASE: Flowers + infrastructure maintenance
+        # Key insight: with saturating fruit conversion, going 100% flowers
+        # is barely better than 50% flowers, so maintain infrastructure
+
+        # Base: balanced flowering with maintenance
+        # ~40% flowers, ~30% leaves, ~20% roots, ~10% trunk
+        base_logits = jnp.array([1.0, 0.5, 0.5, 1.5, 2.0])
+
+        # Wind adaptation: reduce flower allocation when windy
+        # Flowers are vulnerable to wind, and we need trunk protection
+        wind_penalty = wind * 1.5  # Reduce flowers
+        wind_bonus = wind * 1.0  # Boost trunk
+        wind_adjustment = jnp.array([0.0, wind_bonus, 0.0, 0.0, -wind_penalty])
+
+        # Late season push: increase flower allocation as season ends
+        # (less time left = less to lose from wind damage)
+        late_push = jnp.maximum(0.0, (progress - 0.7) * 5.0)  # Ramp after day 70%
+        late_adjustment = jnp.array([0.0, 0.0, 0.0, -late_push * 0.5, late_push])
+
+        logits = base_logits + wind_adjustment + late_adjustment
+
+    return softmax_allocation(logits)

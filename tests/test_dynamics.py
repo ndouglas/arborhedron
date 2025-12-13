@@ -21,6 +21,7 @@ def make_test_state(
     shoots: float = 0.2,
     leaves: float = 0.5,
     flowers: float = 0.0,
+    fruit: float = 0.0,
     soil_water: float = 0.5,
 ) -> TreeState:
     """Create a test state with given values."""
@@ -33,6 +34,7 @@ def make_test_state(
         shoots=jnp.array(shoots),
         leaves=jnp.array(leaves),
         flowers=jnp.array(flowers),
+        fruit=jnp.array(fruit),
         soil_water=jnp.array(soil_water),
     )
 
@@ -390,6 +392,7 @@ class TestDifferentiability:
                 shoots=jnp.array(0.2),
                 leaves=jnp.array(0.5),
                 flowers=jnp.array(0.0),
+                fruit=jnp.array(0.0),
                 soil_water=jnp.array(0.5),
             )
             # Zero allocation to avoid energy consumption

@@ -53,6 +53,7 @@ class Trajectory:
             "shoots": jnp.array([float(s.shoots) for s in self.states]),
             "leaves": jnp.array([float(s.leaves) for s in self.states]),
             "flowers": jnp.array([float(s.flowers) for s in self.states]),
+            "fruit": jnp.array([float(s.fruit) for s in self.states]),
         }
 
     def get_allocation_arrays(self) -> dict[str, Array]:
@@ -106,6 +107,7 @@ class Trajectory:
             "DaysAtZero": days_at_zero,
             "FinalTrunk": float(final_state.trunk),
             "FinalFlowers": float(final_state.flowers),
+            "FinalFruit": float(final_state.fruit),
             "FinalRoots": float(final_state.roots),
             "FinalLeaves": float(final_state.leaves),
             "MeanLight": mean_light,

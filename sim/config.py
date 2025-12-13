@@ -32,6 +32,12 @@ class TreeState(NamedTuple):
 
     Note: `water` is internal plant water (xylem/cells), while `soil_water`
     is the available water in the soil that roots can access.
+
+    Reproductive cycle: flowers → fruit → seeds
+    - Flowers are the reproductive investment (policy allocates here)
+    - Fruit accumulates from mature flowers over time
+    - Fruit can be damaged by stress (wind, drought)
+    - Seeds = integral of fruit over season
     """
 
     energy: Array  # E: Energy store
@@ -42,7 +48,8 @@ class TreeState(NamedTuple):
     shoots: Array  # S: Shoot biomass
     leaves: Array  # L: Leaf biomass
     flowers: Array  # F: Flower biomass
-    soil_water: Array  # SW: Soil water reservoir (new!)
+    fruit: Array  # Q: Fruit/developing seeds (accumulated from mature flowers)
+    soil_water: Array  # SW: Soil water reservoir
 
     @classmethod
     def initial(cls, energy: float = 1.0, soil_water: float = 0.5) -> "TreeState":
@@ -66,6 +73,7 @@ class TreeState(NamedTuple):
             shoots=jnp.array(0.05),
             leaves=jnp.array(0.2),  # Cotyledon leaves for initial photosynthesis
             flowers=jnp.array(eps),
+            fruit=jnp.array(0.0),  # No fruit initially
             soil_water=jnp.array(soil_water),  # Soil water reservoir
         )
 
@@ -82,6 +90,7 @@ class TreeState(NamedTuple):
                     self.shoots >= 0,
                     self.leaves >= 0,
                     self.flowers >= 0,
+                    self.fruit >= 0,
                     self.soil_water >= 0,
                 ]
             )
@@ -98,6 +107,7 @@ class TreeState(NamedTuple):
                         self.shoots,
                         self.leaves,
                         self.flowers,
+                        self.fruit,
                         self.soil_water,
                     ]
                 )
@@ -106,7 +116,7 @@ class TreeState(NamedTuple):
         return jnp.logical_and(all_nonneg, all_finite)
 
     def total_biomass(self) -> Array:
-        """Total biomass across all compartments."""
+        """Total biomass across all compartments (excluding fruit which is reproductive)."""
         return self.roots + self.trunk + self.shoots + self.leaves + self.flowers
 
 
@@ -262,7 +272,9 @@ class SimConfig:
     m_trunk: float = 0.005  # Wood is cheap to maintain
     m_shoot: float = 0.02
     m_leaf: float = 0.03  # Leaves are expensive
-    m_flower: float = 0.04  # Flowers are most expensive
+    m_flower: float = 0.08  # Flowers are VERY expensive (doubled from 0.04)
+    # Higher flower maintenance creates real cost to camping in flowers.
+    # If flowers don't hurt, optimizer will stay there forever.
 
     # Growth efficiency (energy to biomass conversion)
     eta_root: float = 0.8
@@ -357,7 +369,42 @@ class SimConfig:
     flowering_leaves_threshold: float = 0.3  # Minimum leaves to support flowers
     flowering_gate_steepness: float = 10.0  # How sharply phenology gates kick in
     seed_energy_threshold: float = 0.5  # Minimum energy to produce seeds
-    seed_conversion: float = 10.0  # Seeds per unit flower biomass
+    seed_conversion: float = 10.0  # Seeds per unit fruit (was flower) biomass
+
+    # Fruit dynamics (flowers → fruit → seeds)
+    # This creates the "bonsai economics" risk/reward dynamic:
+    # - Flowers convert to fruit only when tree is mature enough
+    # - Fruit accumulates over time but can be damaged by stress
+    # - Seeds = integral of fruit (rewards sustained reproduction, not dumps)
+    #
+    # Maturity gate: m(t) = σ(k_T(T-T_0)) · σ(k_L(L-L_0)) · σ(k_R(R-R_0))
+    # Fruit rate: dQ/dt = α · m(t) · (F/(F+K)) · f_L · f_W · f_I - ρ · Q - damage
+    fruit_maturity_trunk: float = 0.15  # T_0: trunk threshold for mature fruit
+    fruit_maturity_leaves: float = 0.25  # L_0: leaves threshold for mature fruit
+    fruit_maturity_roots: float = 0.15  # R_0: roots threshold for mature fruit
+    fruit_maturity_steepness: float = 10.0  # k: steepness of maturity gates
+    fruit_conversion_rate: float = 0.5  # α: base flowers → fruit rate (increased to offset saturation)
+    fruit_decay_rate: float = 0.02  # ρ: natural fruit decay (ripening/falling)
+
+    # Saturating flower→fruit conversion (prevents "all-in flowers" being optimal)
+    # fruit_contribution = F / (F + K_F)
+    # At K_F=0.3: 0.3 flowers → 50% max, 0.9 flowers → 75% max
+    # This makes 80% flower allocation only marginally better than 40%
+    fruit_saturation_k: float = 0.3  # K_F: half-saturation for flower→fruit
+
+    # Resource gates for fruit formation (must maintain infrastructure)
+    # fruit_gain *= f_L(leaves) · f_W(water) · f_I(light)
+    # This forces policy to keep leaves/roots online during reproduction
+    fruit_leaf_k: float = 0.3  # Leaf half-saturation for fruit support
+    fruit_water_k: float = 0.2  # Water half-saturation for fruit support
+    fruit_light_k: float = 0.3  # Light half-saturation for fruit support
+
+    # Fruit stress damage (the "gambling on reproduction" mechanic)
+    # Wind and drought can destroy developing fruit
+    # This creates real risk: early flowering in unstable weather = lost investment
+    fruit_wind_vulnerability: float = 0.4  # How much wind damages fruit (0-1)
+    fruit_drought_vulnerability: float = 0.3  # How much drought damages fruit
+    fruit_drought_threshold: float = 0.2  # Water level below which fruit suffers
 
     # Store decay (resources decay slightly each day)
     water_decay: float = 0.05

@@ -516,6 +516,7 @@ class TestMaintenanceCost:
             shoots=jnp.array(0.0),
             leaves=jnp.array(0.0),
             flowers=jnp.array(0.0),
+            fruit=jnp.array(0.0),
             soil_water=jnp.array(0.0),
         )
         cost = surrogates.maintenance_cost(
@@ -541,6 +542,7 @@ class TestMaintenanceCost:
             shoots=jnp.array(1.0),
             leaves=jnp.array(1.0),
             flowers=jnp.array(1.0),
+            fruit=jnp.array(0.0),
             soil_water=jnp.array(0.5),
         )
         state2 = TreeState(
@@ -552,6 +554,7 @@ class TestMaintenanceCost:
             shoots=jnp.array(2.0),
             leaves=jnp.array(2.0),
             flowers=jnp.array(2.0),
+            fruit=jnp.array(0.0),
             soil_water=jnp.array(0.5),
         )
         cost1 = surrogates.maintenance_cost(
@@ -575,6 +578,7 @@ class TestMaintenanceCost:
             shoots=jnp.array(0.5),
             leaves=jnp.array(1.5),
             flowers=jnp.array(0.3),
+            fruit=jnp.array(0.0),
             soil_water=jnp.array(0.5),
         )
         cost = surrogates.maintenance_cost(

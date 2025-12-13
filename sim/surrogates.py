@@ -448,6 +448,156 @@ def seed_production(
     return conversion * jnp.array(flowers) * energy_gate
 
 
+def fruit_maturity_gate(
+    trunk: Scalar,
+    leaves: Scalar,
+    roots: Scalar,
+    trunk_threshold: float,
+    leaves_threshold: float,
+    roots_threshold: float,
+    steepness: float = 10.0,
+) -> Array:
+    """
+    Compute maturity gate for fruit production.
+
+    m(t) = σ(k(T-T_0)) · σ(k(L-L_0)) · σ(k(R-R_0))
+
+    Flowers only convert to fruit effectively when the tree is "adult":
+    - Has sufficient trunk (structural support for fruit)
+    - Has sufficient leaves (photosynthetic capacity to support fruit)
+    - Has sufficient roots (water/nutrient supply for fruit development)
+
+    This prevents "flower at day 0" exploits - you need to build infrastructure first.
+
+    Args:
+        trunk: Trunk biomass
+        leaves: Leaf biomass
+        roots: Root biomass
+        trunk_threshold: T_0 - trunk threshold for maturity
+        leaves_threshold: L_0 - leaves threshold for maturity
+        roots_threshold: R_0 - roots threshold for maturity
+        steepness: k - how sharply the gates activate
+
+    Returns:
+        Maturity factor in [0, 1]
+    """
+    trunk_gate = sigmoid(steepness * (jnp.array(trunk) - trunk_threshold))
+    leaves_gate = sigmoid(steepness * (jnp.array(leaves) - leaves_threshold))
+    roots_gate = sigmoid(steepness * (jnp.array(roots) - roots_threshold))
+
+    return trunk_gate * leaves_gate * roots_gate
+
+
+def fruit_stress_damage(
+    wind: Scalar,
+    water: Scalar,
+    wind_vulnerability: float,
+    drought_vulnerability: float,
+    drought_threshold: float,
+    wind_threshold: float = 0.5,
+    wind_steepness: float = 8.0,
+) -> Array:
+    """
+    Compute stress damage to developing fruit.
+
+    Fruit is vulnerable to:
+    - Wind: physical damage to flowers/developing fruit
+    - Drought: water stress aborts fruit development
+
+    damage = wind_dmg + drought_dmg
+
+    This creates the "gambling on reproduction" dynamic:
+    - Early flowering in unstable weather = risk of losing investment
+    - Timing reproduction to calm periods = safer but narrower window
+
+    Args:
+        wind: Current wind level [0, 1]
+        water: Internal water level
+        wind_vulnerability: How much wind damages fruit (0-1)
+        drought_vulnerability: How much drought damages fruit (0-1)
+        drought_threshold: Water level below which fruit suffers
+        wind_threshold: Wind level above which damage starts
+        wind_steepness: How sharply wind damage ramps up
+
+    Returns:
+        Total damage factor (fruit loss rate)
+    """
+    # Wind damage: sigmoid ramp above threshold
+    wind_damage = wind_vulnerability * sigmoid(
+        wind_steepness * (jnp.array(wind) - wind_threshold)
+    )
+
+    # Drought damage: sigmoid ramp below threshold
+    drought_damage = drought_vulnerability * sigmoid(
+        10.0 * (drought_threshold - jnp.array(water))
+    )
+
+    # Combined damage (capped at 0.9 to avoid instant wipeout)
+    total_damage = jnp.minimum(wind_damage + drought_damage, 0.9)
+
+    return total_damage
+
+
+def fruit_formation_rate(
+    flowers: Scalar,
+    leaves: Scalar,
+    water: Scalar,
+    light: Scalar,
+    maturity: Scalar,
+    base_rate: float,
+    saturation_k: float,
+    k_leaf: float = 0.3,
+    k_water: float = 0.2,
+    k_light: float = 0.3,
+) -> Array:
+    """
+    Compute fruit formation rate with resource gating and saturation.
+
+    fruit_add = base_rate · maturity · (F / (F + K)) · f_L(L) · f_W(W) · f_I(I)
+
+    Key features:
+    1. **Saturation**: F/(F+K) creates diminishing returns to flowers.
+       Going from 0.4 to 0.8 flowers is much less valuable than 0 to 0.4.
+       This prevents "all-in flowers" being optimal.
+
+    2. **Resource gates**: Must maintain leaves (photosynthesis), water,
+       and light availability to actually convert flowers to fruit.
+       This forces the policy to keep infrastructure alive during reproduction.
+
+    3. **Maturity gate**: Passed in from caller (must be adult tree).
+
+    Args:
+        flowers: Current flower biomass
+        leaves: Current leaf biomass (need canopy to support fruit)
+        water: Internal water level (fruit needs water)
+        light: Current light availability (fruit needs photosynthate)
+        maturity: Pre-computed maturity gate [0, 1]
+        base_rate: Base conversion rate (α)
+        saturation_k: Half-saturation constant for flowers (K_F)
+        k_leaf: Leaf half-saturation for fruit support
+        k_water: Water half-saturation for fruit support
+        k_light: Light half-saturation for fruit support
+
+    Returns:
+        Fruit formation rate (dQ/dt contribution)
+    """
+    # Saturating flower conversion: F/(F+K)
+    # At K_F=0.3: 0.3 flowers → 50% max rate, 0.9 flowers → 75% max rate
+    # This makes "80% flowers" only marginally better than "40% flowers"
+    flower_contribution = saturation(jnp.array(flowers), saturation_k)
+
+    # Resource gates: must maintain infrastructure to cash in on flowers
+    leaf_support = saturation(jnp.array(leaves), k_leaf)
+    water_support = saturation(jnp.array(water), k_water)
+    light_support = saturation(jnp.array(light), k_light)
+
+    # Combined resource efficiency
+    resource_efficiency = leaf_support * water_support * light_support
+
+    # Final fruit formation = base_rate · maturity · saturated_flowers · resources
+    return base_rate * maturity * flower_contribution * resource_efficiency
+
+
 def compute_load(
     leaves: Scalar,
     shoots: Scalar,
