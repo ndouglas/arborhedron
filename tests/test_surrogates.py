@@ -378,6 +378,128 @@ class TestRootUptake:
         assert nutrients <= 0.2 + 1e-6
 
 
+class TestRootUptakeFromSoil:
+    """Tests for root uptake from soil reservoir."""
+
+    def test_no_roots_no_uptake(self) -> None:
+        """Without roots, no uptake occurs."""
+        water, nutrients, extracted = surrogates.root_uptake_from_soil(
+            roots=0.0,
+            soil_water=1.0,
+            moisture=0.6,
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+        assert jnp.isclose(water, 0.0, atol=1e-6)
+        assert jnp.isclose(nutrients, 0.0, atol=1e-6)
+        assert jnp.isclose(extracted, 0.0, atol=1e-6)
+
+    def test_no_soil_water_no_uptake(self) -> None:
+        """Without soil water, no uptake occurs (drought scarcity)."""
+        water, nutrients, extracted = surrogates.root_uptake_from_soil(
+            roots=1.0,
+            soil_water=0.0,
+            moisture=0.6,
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+        assert jnp.isclose(water, 0.0, atol=1e-6)
+        assert jnp.isclose(extracted, 0.0, atol=1e-6)
+
+    def test_extreme_moisture_low_uptake(self) -> None:
+        """Both very low and very high moisture reduce uptake (inverted-U)."""
+        # Optimal moisture
+        w_opt, _, _ = surrogates.root_uptake_from_soil(
+            roots=1.0,
+            soil_water=1.0,
+            moisture=0.6,  # Optimal
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+
+        # Very low moisture (drought stress on roots)
+        w_dry, _, _ = surrogates.root_uptake_from_soil(
+            roots=1.0,
+            soil_water=1.0,
+            moisture=0.1,  # Too dry
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+
+        # Very high moisture (waterlogging/anoxia)
+        w_wet, _, _ = surrogates.root_uptake_from_soil(
+            roots=1.0,
+            soil_water=1.0,
+            moisture=1.0,  # Too wet
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+
+        # Optimal should beat both extremes (inverted-U / bell curve)
+        assert float(w_opt) > float(w_dry)
+        assert float(w_opt) > float(w_wet)
+
+    def test_extraction_limited_by_soil_water(self) -> None:
+        """Cannot extract more water than exists in soil."""
+        # High demand but low soil water
+        water, _, extracted = surrogates.root_uptake_from_soil(
+            roots=10.0,  # High roots = high demand
+            soil_water=0.05,  # Very little soil water
+            moisture=0.6,
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+        # Extraction should be capped at soil water level
+        assert float(extracted) <= 0.05
+
+    def test_more_roots_more_uptake(self) -> None:
+        """More roots means more uptake."""
+        w1, n1, _ = surrogates.root_uptake_from_soil(
+            roots=0.5,
+            soil_water=1.0,
+            moisture=0.6,
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+        w2, n2, _ = surrogates.root_uptake_from_soil(
+            roots=2.0,
+            soil_water=1.0,
+            moisture=0.6,
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+        assert w2 > w1
+        assert n2 > n1
+
+    def test_more_soil_water_more_uptake(self) -> None:
+        """More soil water means more uptake."""
+        w1, _, _ = surrogates.root_uptake_from_soil(
+            roots=1.0,
+            soil_water=0.2,
+            moisture=0.6,
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+        w2, _, _ = surrogates.root_uptake_from_soil(
+            roots=1.0,
+            soil_water=1.0,
+            moisture=0.6,
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+        assert w2 > w1
+
+
 class TestMaintenanceCost:
     """Tests for maintenance cost calculation."""
 

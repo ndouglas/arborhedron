@@ -719,19 +719,29 @@ def soil_water_recharge(
 def root_uptake_from_soil(
     roots: Scalar,
     soil_water: Scalar,
+    moisture: Scalar,
     u_water_max: float,
     u_nutrient_max: float,
     k_root: float,
     k_soil: float = 0.3,
+    m_opt: float = 0.6,
+    m_sigma: float = 0.35,
 ) -> tuple[Array, Array, Array]:
     """
     Root uptake of water and nutrients from soil reservoir.
 
-    Water uptake is limited by BOTH root biomass AND available soil water.
-    This creates actual water scarcity during drought.
+    Water uptake is limited by:
+    1. Root biomass (more roots = better extraction)
+    2. Soil water availability (can't extract what isn't there)
+    3. Moisture conditions (inverted-U: both drought AND waterlogging hurt roots)
 
-    U_W = U_W_max · f_R(R) · f_SW(SW)
-    U_N = U_N_max · f_R(R) · f_SW(SW)
+    U_W = U_W_max · f_R(R) · f_SW(SW) · f_M(M)
+    U_N = U_N_max · f_R(R) · f_SW(SW) · f_M(M)
+
+    The moisture efficiency creates the inverted-U response:
+    - Too dry: roots can't function well (drought stress)
+    - Optimal: maximum uptake efficiency
+    - Too wet: roots can't function well (anoxia/root rot)
 
     The actual water removed from soil is min(U_W, soil_water) to prevent
     extracting more water than exists.
@@ -739,10 +749,13 @@ def root_uptake_from_soil(
     Args:
         roots: Root biomass
         soil_water: Available soil water
+        moisture: Environmental moisture [0, 1] (for anoxia penalty)
         u_water_max: Maximum water uptake rate
         u_nutrient_max: Maximum nutrient uptake rate
         k_root: Root half-saturation constant
         k_soil: Soil water half-saturation (below this, uptake is limited)
+        m_opt: Optimal moisture level for root function
+        m_sigma: Width of optimal moisture band
 
     Returns:
         Tuple of (water_uptake, nutrient_uptake, water_extracted_from_soil)
@@ -750,9 +763,11 @@ def root_uptake_from_soil(
     root_eff = saturation(jnp.array(roots), k_root)
     # Soil water availability - can't extract what isn't there
     soil_eff = saturation(jnp.array(soil_water), k_soil)
+    # Moisture efficiency - inverted-U penalizes both drought AND waterlogging
+    moist_eff = moisture_efficiency(moisture, m_opt, m_sigma)
 
-    water_demand = u_water_max * root_eff * soil_eff
-    nutrient_uptake = u_nutrient_max * root_eff * soil_eff
+    water_demand = u_water_max * root_eff * soil_eff * moist_eff
+    nutrient_uptake = u_nutrient_max * root_eff * soil_eff * moist_eff
 
     # Can't extract more water than exists in soil
     water_extracted = jnp.minimum(water_demand, jnp.array(soil_water))

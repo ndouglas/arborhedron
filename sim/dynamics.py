@@ -84,12 +84,16 @@ def step(
     soil_water = soil_water + recharge
 
     # 1. Root uptake from soil reservoir (creates actual water scarcity)
+    # Includes inverted-U moisture response (both drought AND waterlogging hurt roots)
     water_uptake, nutrient_uptake, water_extracted = surrogates.root_uptake_from_soil(
         roots=roots,
         soil_water=soil_water,
+        moisture=moisture,
         u_water_max=config.u_water_max,
         u_nutrient_max=config.u_nutrient_max,
         k_root=config.k_root,
+        m_opt=config.moisture_optimum,
+        m_sigma=config.moisture_sigma,
     )
     # Deplete soil water and add to internal water
     soil_water = soil_water - water_extracted
@@ -348,13 +352,16 @@ def diagnose_energy_budget(
     )
     soil_water_after_recharge = state.soil_water + recharge
 
-    # Root uptake from soil reservoir
+    # Root uptake from soil reservoir (with inverted-U moisture response)
     water_uptake, nutrient_uptake, water_extracted = surrogates.root_uptake_from_soil(
         roots=state.roots,
         soil_water=soil_water_after_recharge,
+        moisture=moisture,
         u_water_max=config.u_water_max,
         u_nutrient_max=config.u_nutrient_max,
         k_root=config.k_root,
+        m_opt=config.moisture_optimum,
+        m_sigma=config.moisture_sigma,
     )
     water = state.water + water_uptake
     nutrients = state.nutrients + nutrient_uptake
