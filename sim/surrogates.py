@@ -106,26 +106,101 @@ def wind_damage(
     wind: Array,
     threshold: float,
     steepness: float = 8.0,
+    max_damage: float = 0.5,
 ) -> Array:
     """
-    Sigmoid damage function for wind stress.
+    Sigmoid damage function for wind stress with damage cap.
 
-    Damage ramps up smoothly once wind exceeds threshold.
+    Damage ramps up smoothly once wind exceeds threshold, but is capped
+    to prevent instant wipeout and preserve gradient signal.
 
-    d(v) = σ(k(v - v₀))
+    d(v) = max_damage · σ(k(v - v₀))
+
+    The cap ensures that even in extreme wind, some biomass survives
+    each timestep. This:
+    1. Preserves gradient signal for learning
+    2. Makes wind a continuous hazard, not a binary death sentence
+    3. Allows wood investment to be a meaningful defense
 
     Note: steepness of 8-15 recommended. Higher values cause vanishing
-    gradients outside a narrow band. Lower values make causality mushy.
+    gradients outside a narrow band.
 
     Args:
         wind: Wind speed (normalized, typically [0, 1])
-        threshold: Wind level where damage reaches 50%
+        threshold: Wind level where damage reaches 50% of max
         steepness: How sharply damage ramps up (recommend 8-15)
+        max_damage: Maximum damage fraction per timestep (default 0.5)
 
     Returns:
-        Damage factor in [0, 1]
+        Damage factor in [0, max_damage]
     """
-    return sigmoid(steepness * (wind - threshold))
+    raw_damage = sigmoid(steepness * (wind - threshold))
+    return max_damage * raw_damage
+
+
+def wood_protection(
+    trunk: Scalar,
+    k_protection: float = 1.0,
+    max_protection: float = 0.7,
+) -> Array:
+    """
+    Compute protection factor from trunk/wood against wind damage.
+
+    Wood provides structural support that reduces wind damage to
+    tender growth (shoots and leaves).
+
+    protection = max_protection · (1 - exp(-k · T))
+
+    Properties:
+    - protection(0) = 0 (no trunk, no protection)
+    - protection → max_protection as T → ∞
+    - More trunk = less effective wind damage
+
+    Args:
+        trunk: Trunk biomass
+        k_protection: How quickly protection saturates with trunk
+        max_protection: Maximum protection fraction (default 0.7 = 70% reduction)
+
+    Returns:
+        Protection factor in [0, max_protection]
+    """
+    t = jnp.array(trunk)
+    return max_protection * (1.0 - jnp.exp(-k_protection * t))
+
+
+def effective_wind_damage(
+    wind: Scalar,
+    trunk: Scalar,
+    threshold: float = 0.5,
+    steepness: float = 8.0,
+    max_damage: float = 0.5,
+    k_protection: float = 1.0,
+    max_protection: float = 0.7,
+) -> Array:
+    """
+    Compute effective wind damage after wood protection.
+
+    effective_damage = base_damage · (1 - protection)
+
+    This makes trunk investment a meaningful defense against wind:
+    - More trunk = more protection
+    - Even in high wind, damage is capped and can be mitigated
+
+    Args:
+        wind: Wind speed [0, 1]
+        trunk: Trunk biomass (provides protection)
+        threshold: Wind threshold for damage
+        steepness: Sigmoid steepness
+        max_damage: Maximum damage per timestep
+        k_protection: Trunk protection rate
+        max_protection: Maximum protection from trunk
+
+    Returns:
+        Effective damage factor after protection
+    """
+    base_damage = wind_damage(jnp.array(wind), threshold, steepness, max_damage)
+    protection = wood_protection(trunk, k_protection, max_protection)
+    return base_damage * (1.0 - protection)
 
 
 def structural_penalty(load: Scalar, capacity: Scalar) -> Array:
@@ -241,20 +316,52 @@ def photosynthesis(
     return p_max * leaf_eff * combined_eff
 
 
+def moisture_efficiency(
+    moisture: Scalar,
+    m_opt: float = 0.6,
+    sigma: float = 0.25,
+) -> Array:
+    """
+    Moisture efficiency with optimal range (inverted-U shape).
+
+    Uses a Gaussian to create an optimum at m_opt:
+        f(M) = exp(-(M - m_opt)² / (2σ²))
+
+    This prevents "more moisture is always better" by penalizing:
+    - Low moisture (drought stress)
+    - High moisture (flooding/root rot)
+
+    Args:
+        moisture: Soil moisture [0, 1]
+        m_opt: Optimal moisture level (default 0.6)
+        sigma: Width of optimal band (default 0.25)
+
+    Returns:
+        Efficiency in (0, 1]
+    """
+    m = jnp.array(moisture)
+    return jnp.exp(-((m - m_opt) ** 2) / (2 * sigma**2))
+
+
 def root_uptake(
     roots: Scalar,
     moisture: Scalar,
     u_water_max: float,
     u_nutrient_max: float,
     k_root: float,
+    m_opt: float = 0.6,
+    m_sigma: float = 0.25,
 ) -> tuple[Array, Array]:
     """
-    Root uptake of water and nutrients.
+    Root uptake of water and nutrients with optimal moisture.
 
     U_W = U_W_max · f_R(R) · f_M(M)
     U_N = U_N_max · f_R(R) · f_M(M)
 
-    Both water and nutrient uptake depend on root biomass and soil moisture.
+    where f_M uses a Gaussian centered at m_opt to create an inverted-U:
+    - Too dry: reduced uptake (drought)
+    - Optimal: maximum uptake
+    - Too wet: reduced uptake (root rot / anoxia)
 
     Args:
         roots: Root biomass
@@ -262,12 +369,15 @@ def root_uptake(
         u_water_max: Maximum water uptake rate
         u_nutrient_max: Maximum nutrient uptake rate
         k_root: Root half-saturation constant
+        m_opt: Optimal moisture level
+        m_sigma: Width of optimal moisture band
 
     Returns:
         Tuple of (water_uptake, nutrient_uptake)
     """
     root_eff = saturation(jnp.array(roots), k_root)
-    moisture_eff = saturation(jnp.array(moisture), k_root)  # Reuse k_root for moisture
+    # Inverted-U moisture response instead of monotonic
+    moisture_eff = moisture_efficiency(moisture, m_opt, m_sigma)
 
     water_uptake = u_water_max * root_eff * moisture_eff
     nutrient_uptake = u_nutrient_max * root_eff * moisture_eff

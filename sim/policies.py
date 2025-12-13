@@ -12,7 +12,7 @@ All policies output Allocation tuples that sum to 1.
 
 import jax.numpy as jnp
 from jax import Array
-from jax.nn import softmax
+from jax.nn import sigmoid, softmax
 
 from sim.config import Allocation, TreeState
 
@@ -48,10 +48,12 @@ def baseline_policy(
     """
     Hand-coded baseline policy following PvZ economics.
 
-    Strategy phases:
+    Strategy phases with SMOOTH transitions:
     - Early (0-20%): Build roots and leaves for resource gathering
     - Mid (20-60%): Expand with shoots, start building trunk
     - Late (60-100%): Consolidate trunk, invest in flowers
+
+    Uses sigmoid interpolation between phases to avoid gradient discontinuities.
 
     Args:
         state: Current tree state (unused in baseline, but API-compatible)
@@ -64,16 +66,28 @@ def baseline_policy(
     """
     progress = day / num_days
 
-    # Base allocations that shift over time
-    if progress < 0.2:
-        # Early: foundation building
-        base_logits = jnp.array([2.0, 0.5, 1.0, 2.5, -2.0])
-    elif progress < 0.6:
-        # Mid: expansion
-        base_logits = jnp.array([1.5, 1.5, 1.5, 1.5, 0.0])
-    else:
-        # Late: consolidation and reproduction
-        base_logits = jnp.array([0.5, 2.0, 0.5, 1.0, 2.0])
+    # Phase logits
+    early_logits = jnp.array([2.0, 0.5, 1.0, 2.5, -2.0])  # Foundation
+    mid_logits = jnp.array([1.5, 1.5, 1.5, 1.5, 0.0])  # Expansion
+    late_logits = jnp.array([0.5, 2.0, 0.5, 1.0, 2.0])  # Consolidation
+
+    # Smooth transitions using sigmoid blending
+    # k controls transition sharpness (15 gives smooth ~10% transition band)
+    k = 15.0
+    # blend1: 0->1 around 0.2 (early -> mid transition)
+    # blend2: 0->1 around 0.6 (mid -> late transition)
+    blend1 = sigmoid(k * (progress - 0.2))
+    blend2 = sigmoid(k * (progress - 0.6))
+
+    # Interpolate: early * (1-blend1) + mid * (blend1 - blend2) + late * blend2
+    # At progress=0:   blend1≈0, blend2≈0 → early
+    # At progress=0.4: blend1≈1, blend2≈0 → mid
+    # At progress=0.8: blend1≈1, blend2≈1 → late
+    base_logits = (
+        early_logits * (1.0 - blend1)
+        + mid_logits * (blend1 - blend2)
+        + late_logits * blend2
+    )
 
     # Wind adaptation: increase trunk allocation when windy
     wind_bonus = jnp.array([0.0, wind * 2.0, -wind * 0.5, -wind * 0.5, 0.0])
@@ -83,10 +97,10 @@ def baseline_policy(
 
 
 def growth_focused_policy(
-    state: TreeState,
-    day: int,
-    num_days: int,
-    wind: float = 0.0,
+    state: TreeState,  # noqa: ARG001
+    day: int,  # noqa: ARG001
+    num_days: int,  # noqa: ARG001
+    wind: float = 0.0,  # noqa: ARG001
 ) -> Allocation:
     """
     Policy focused on maximizing growth (roots + leaves).
@@ -94,10 +108,10 @@ def growth_focused_policy(
     Good for benign environments with low stress.
 
     Args:
-        state: Current tree state
-        day: Current day
-        num_days: Total season length
-        wind: Current wind level (unused)
+        state: Current tree state (API-compatible, unused)
+        day: Current day (API-compatible, unused)
+        num_days: Total season length (API-compatible, unused)
+        wind: Current wind level (API-compatible, unused)
 
     Returns:
         Growth-focused allocation
@@ -108,10 +122,10 @@ def growth_focused_policy(
 
 
 def defensive_policy(
-    state: TreeState,
-    day: int,
-    num_days: int,
-    wind: float = 0.0,
+    state: TreeState,  # noqa: ARG001
+    day: int,  # noqa: ARG001
+    num_days: int,  # noqa: ARG001
+    wind: float = 0.0,  # noqa: ARG001
 ) -> Allocation:
     """
     Policy focused on structural resilience.
@@ -119,10 +133,10 @@ def defensive_policy(
     Good for harsh environments with wind/stress.
 
     Args:
-        state: Current tree state
-        day: Current day
-        num_days: Total season length
-        wind: Current wind level (unused)
+        state: Current tree state (API-compatible, unused)
+        day: Current day (API-compatible, unused)
+        num_days: Total season length (API-compatible, unused)
+        wind: Current wind level (API-compatible, unused)
 
     Returns:
         Defensive allocation
@@ -133,10 +147,10 @@ def defensive_policy(
 
 
 def reproduction_policy(
-    state: TreeState,
-    day: int,
-    num_days: int,
-    wind: float = 0.0,
+    state: TreeState,  # noqa: ARG001
+    day: int,  # noqa: ARG001
+    num_days: int,  # noqa: ARG001
+    wind: float = 0.0,  # noqa: ARG001
 ) -> Allocation:
     """
     Policy focused on reproduction (flowers).
@@ -144,10 +158,10 @@ def reproduction_policy(
     Good for late-season all-in on seeds.
 
     Args:
-        state: Current tree state
-        day: Current day
-        num_days: Total season length
-        wind: Current wind level (unused)
+        state: Current tree state (API-compatible, unused)
+        day: Current day (API-compatible, unused)
+        num_days: Total season length (API-compatible, unused)
+        wind: Current wind level (API-compatible, unused)
 
     Returns:
         Reproduction-focused allocation
@@ -158,27 +172,30 @@ def reproduction_policy(
 
 
 def phased_policy(
-    state: TreeState,
+    state: TreeState,  # noqa: ARG001
     day: int,
     num_days: int,
-    wind: float = 0.0,
+    wind: float = 0.0,  # noqa: ARG001
     early_logits: Array | None = None,
     mid_logits: Array | None = None,
     late_logits: Array | None = None,
+    transition_steepness: float = 15.0,
 ) -> Allocation:
     """
     Parameterized phased policy for optimization.
 
     This policy can be optimized by learning the logits for each phase.
+    Uses smooth sigmoid blending between phases.
 
     Args:
-        state: Current tree state
+        state: Current tree state (API-compatible, unused)
         day: Current day
         num_days: Total season length
-        wind: Current wind level
+        wind: Current wind level (API-compatible, unused)
         early_logits: Logits for early phase (days 0-20%)
         mid_logits: Logits for mid phase (days 20-60%)
         late_logits: Logits for late phase (days 60-100%)
+        transition_steepness: Controls smoothness of phase transitions
 
     Returns:
         Allocation based on current phase
@@ -193,23 +210,17 @@ def phased_policy(
 
     progress = day / num_days
 
-    # Smooth interpolation between phases using sigmoids
-    early_weight = 1.0 - jnp.tanh(10.0 * (progress - 0.2))
-    late_weight = jnp.tanh(10.0 * (progress - 0.6))
-    mid_weight = 1.0 - jnp.abs(early_weight) - jnp.abs(late_weight)
+    # Smooth transitions using sigmoid blending (same as baseline_policy)
+    k = transition_steepness
+    blend1 = sigmoid(k * (progress - 0.2))
+    blend2 = sigmoid(k * (progress - 0.6))
 
-    # Ensure weights are positive and normalized
-    early_weight = jnp.maximum(early_weight, 0.0)
-    mid_weight = jnp.maximum(mid_weight, 0.0)
-    late_weight = jnp.maximum(late_weight, 0.0)
-    total_weight = early_weight + mid_weight + late_weight + 1e-8
-
-    # Interpolate logits
+    # Interpolate: early * (1-blend1) + mid * (blend1 - blend2) + late * blend2
     logits = (
-        early_weight * early_logits
-        + mid_weight * mid_logits
-        + late_weight * late_logits
-    ) / total_weight
+        early_logits * (1.0 - blend1)
+        + mid_logits * (blend1 - blend2)
+        + late_logits * blend2
+    )
 
     return softmax_allocation(logits)
 

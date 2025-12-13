@@ -235,6 +235,12 @@ class SimConfig:
     u_nutrient_max: float = 0.2  # Maximum nutrient uptake rate
     k_root: float = 0.5  # Root half-saturation constant
 
+    # Moisture optimum (inverted-U response)
+    # Too dry: reduced uptake (drought stress)
+    # Too wet: reduced uptake (root rot / anoxia)
+    moisture_optimum: float = 0.6  # Optimal moisture level
+    moisture_sigma: float = 0.25  # Width of optimal moisture band
+
     # Maintenance costs (per unit biomass per day)
     m_root: float = 0.01
     m_trunk: float = 0.005  # Wood is cheap to maintain
@@ -274,7 +280,13 @@ class SimConfig:
     wind_steepness: float = 8.0
     alpha_shoot: float = 0.3  # Shoot damage coefficient
     alpha_leaf: float = 0.2  # Leaf damage coefficient
-    max_daily_damage: float = 0.05  # Cap on daily damage (prevents exponential death)
+    max_wind_damage: float = 0.5  # Maximum base damage per day (before protection)
+
+    # Wood protection against wind
+    # Trunk provides structural support that reduces wind damage
+    # protection = max_protection * (1 - exp(-k_protection * trunk))
+    k_wind_protection: float = 1.0  # How quickly trunk provides protection
+    max_wind_protection: float = 0.7  # Maximum protection (70% damage reduction)
 
     # Transpiration parameters (water loss from leaves)
     # Transpiration = transp_rate * leaves * light

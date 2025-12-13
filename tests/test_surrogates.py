@@ -95,14 +95,16 @@ class TestWindDamage:
         assert result < 0.02  # sigmoid(-4) ≈ 0.018
 
     def test_high_wind_full_damage(self) -> None:
-        """Well above threshold, damage approaches 1."""
+        """Well above threshold, damage approaches max_damage (0.5 by default)."""
         result = surrogates.wind_damage(jnp.array(1.0), threshold=0.5, steepness=10.0)
-        assert result > 0.99
+        # With max_damage=0.5, full damage approaches 0.5, not 1.0
+        assert result > 0.49
 
     def test_threshold_gives_half_damage(self) -> None:
-        """At threshold, damage is 0.5."""
+        """At threshold, damage is half of max_damage."""
         result = surrogates.wind_damage(jnp.array(0.5), threshold=0.5, steepness=10.0)
-        assert jnp.isclose(result, 0.5, atol=0.01)
+        # With max_damage=0.5, half damage is 0.25
+        assert jnp.isclose(result, 0.25, atol=0.01)
 
     def test_monotonically_increasing(self) -> None:
         """Damage increases with wind speed."""
@@ -136,7 +138,7 @@ class TestStructuralPenalty:
         """Penalty transitions smoothly near equilibrium."""
         loads = jnp.linspace(0.5, 1.5, 20)
         penalties = jnp.array(
-            [surrogates.structural_penalty(load=float(l), capacity=1.0) for l in loads]
+            [surrogates.structural_penalty(load=float(load_val), capacity=1.0) for load_val in loads]
         )
         # Check monotonically increasing
         diffs = jnp.diff(penalties)
@@ -310,16 +312,36 @@ class TestRootUptake:
         assert jnp.isclose(water, 0.0, atol=1e-6)
         assert jnp.isclose(nutrients, 0.0, atol=1e-6)
 
-    def test_no_moisture_no_water_uptake(self) -> None:
-        """Zero moisture means zero water uptake."""
-        water, _ = surrogates.root_uptake(
+    def test_extreme_moisture_low_uptake(self) -> None:
+        """Extreme moisture (too low or too high) gives reduced uptake due to inverted-U."""
+        # At moisture=0, far from optimum (0.6), efficiency is low but not zero
+        # Gaussian: exp(-(0-0.6)^2 / (2*0.25^2)) = exp(-2.88) ≈ 0.056
+        water_dry, _ = surrogates.root_uptake(
             roots=1.0,
             moisture=0.0,
             u_water_max=0.3,
             u_nutrient_max=0.2,
             k_root=0.5,
         )
-        assert jnp.isclose(water, 0.0, atol=1e-6)
+        # At moisture=1.0, also far from optimum, efficiency is low
+        water_wet, _ = surrogates.root_uptake(
+            roots=1.0,
+            moisture=1.0,
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+        # At optimal moisture, efficiency is high
+        water_opt, _ = surrogates.root_uptake(
+            roots=1.0,
+            moisture=0.6,  # Default optimum
+            u_water_max=0.3,
+            u_nutrient_max=0.2,
+            k_root=0.5,
+        )
+        # Both extremes should be much lower than optimal
+        assert water_dry < water_opt * 0.2  # Dry: <20% of optimal
+        assert water_wet < water_opt * 0.5  # Wet: <50% of optimal (closer to optimum)
 
     def test_more_roots_more_uptake(self) -> None:
         """More roots means more uptake."""

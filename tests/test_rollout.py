@@ -236,7 +236,6 @@ class TestDifferentiability:
     def test_rollout_gradients_exist(self) -> None:
         """Gradients should flow through the rollout."""
 
-        config = SimConfig(num_days=20)  # Short season for speed
         climate = ClimateConfig.mild()
 
         def loss_fn(seed_energy: Array) -> Array:

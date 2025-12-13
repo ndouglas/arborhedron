@@ -66,13 +66,15 @@ def step(
     leaves = state.leaves
     flowers = state.flowers
 
-    # 1. Root uptake of water and nutrients
+    # 1. Root uptake of water and nutrients (with inverted-U moisture response)
     water_uptake, nutrient_uptake = surrogates.root_uptake(
         roots=roots,
         moisture=moisture,
         u_water_max=config.u_water_max,
         u_nutrient_max=config.u_nutrient_max,
         k_root=config.k_root,
+        m_opt=config.moisture_optimum,
+        m_sigma=config.moisture_sigma,
     )
     water = water + water_uptake
     nutrients = nutrients + nutrient_uptake
@@ -190,25 +192,25 @@ def step(
     nutrients = nutrients - config.c_nutrient_growth * total_growth
 
     # 8. Wind damage to tender growth (shoots and leaves)
-    # Key fix: Cap daily damage to prevent exponential genocide
-    damage_factor = surrogates.wind_damage(
-        jnp.array(wind),
+    # Uses effective_wind_damage which includes:
+    # - Sigmoid damage ramp with threshold
+    # - Damage cap (max_wind_damage) to prevent instant wipeout
+    # - Wood protection (trunk provides structural support)
+    effective_damage = surrogates.effective_wind_damage(
+        wind=wind,
+        trunk=trunk,
         threshold=config.wind_threshold,
         steepness=config.wind_steepness,
+        max_damage=config.max_wind_damage,
+        k_protection=config.k_wind_protection,
+        max_protection=config.max_wind_protection,
     )
 
-    # Vulnerability decreases with trunk support (wood protects tender growth)
-    # vulnerability = 1 / (1 + trunk) gives smooth decrease
-    vulnerability = 1.0 / (1.0 + trunk)
-
-    # Shoots are damaged by wind (capped at max_daily_damage)
-    shoot_damage_rate = damage_factor * config.alpha_shoot * vulnerability
-    shoot_damage = jnp.minimum(shoot_damage_rate, config.max_daily_damage)
+    # Apply compartment-specific damage coefficients
+    shoot_damage = effective_damage * config.alpha_shoot
     shoots = shoots * (1.0 - shoot_damage)
 
-    # Leaves are damaged by wind (capped at max_daily_damage)
-    leaf_damage_rate = damage_factor * config.alpha_leaf * vulnerability
-    leaf_damage = jnp.minimum(leaf_damage_rate, config.max_daily_damage)
+    leaf_damage = effective_damage * config.alpha_leaf
     leaves = leaves * (1.0 - leaf_damage)
 
     # 9. Structural penalty
@@ -257,10 +259,10 @@ def step(
 
 def diagnose_energy_budget(
     state: TreeState,
-    allocation: Allocation,
+    allocation: Allocation,  # noqa: ARG001
     light: float,
     moisture: float,
-    wind: float,
+    wind: float,  # noqa: ARG001
     config: SimConfig,
 ) -> dict[str, float]:
     """
