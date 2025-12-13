@@ -7,11 +7,14 @@ The update follows this sequence:
 1. Root uptake of water and nutrients
 2. Transport bottleneck (trunk limits water delivery)
 3. Photosynthesis (energy production with self-shading)
+   3b. Stomatal closure (internal water gates photosynthesis)
 4. Water/nutrient consumption for photosynthesis
+   4b. Transpiration (leaves lose water)
 5. Maintenance costs
 6. Resource allocation and growth
 7. Water/nutrient consumption for growth
 8. Wind damage
+   8b. Drought leaf senescence (low water damages leaves)
 9. Structural penalty
 10. Resource decay
 11. Clamping to nonnegative values
@@ -20,6 +23,9 @@ Key stabilization mechanisms:
 - Self-shading (Beer-Lambert): prevents runaway leaf growth
 - Resource consumption: water/nutrients are used during photosynthesis and growth
 - Transport bottleneck: trunk limits water delivery to canopy
+- Stomatal closure: low water reduces photosynthesis (prevents desiccation)
+- Drought senescence: critically low water damages leaves (forces root investment)
+- Transpiration: leaves consume water proportional to light (drought pressure)
 
 All operations are differentiable for gradient-based optimization.
 """
@@ -90,7 +96,8 @@ def step(
     water_available = jnp.minimum(water, transport_cap)
 
     # 3. Photosynthesis (uses transport-limited water)
-    photo_energy = surrogates.photosynthesis(
+    # First compute raw photosynthetic potential
+    photo_potential = surrogates.photosynthesis(
         leaves=leaves,
         light=light,
         water=water_available,
@@ -101,6 +108,16 @@ def step(
         k_nutrient=config.k_nutrient,
         k_leaf=config.k_leaf,
     )
+
+    # 3b. Stomatal closure: when internal water is low, stomata close
+    # This reduces photosynthesis but conserves water (prevents desiccation)
+    stomatal_gate = surrogates.stomatal_conductance(
+        water=water,
+        water_threshold=config.stomatal_threshold,
+        steepness=config.stomatal_steepness,
+        min_conductance=config.stomatal_min,
+    )
+    photo_energy = photo_potential * stomatal_gate
     energy = energy + photo_energy
 
     # 4. Consume water and nutrients for photosynthesis
@@ -212,6 +229,16 @@ def step(
 
     leaf_damage = effective_damage * config.alpha_leaf
     leaves = leaves * (1.0 - leaf_damage)
+
+    # 8b. Drought leaf senescence: when water is critically low, leaves die back
+    # This is the "nuclear option" - the tree sacrifices leaves to survive drought
+    drought_leaf_damage = surrogates.drought_damage(
+        water=water,
+        water_critical=config.drought_critical,
+        steepness=config.drought_steepness,
+        max_damage=config.drought_max_damage,
+    )
+    leaves = leaves * (1.0 - drought_leaf_damage)
 
     # 9. Structural penalty
     load = surrogates.compute_load(
@@ -340,6 +367,21 @@ def diagnose_energy_budget(
     # Self-shading efficiency (for debugging)
     leaf_eff = float(surrogates.leaf_area_efficiency(state.leaves, config.k_leaf))
 
+    # Drought mechanics
+    stomatal = surrogates.stomatal_conductance(
+        water=state.water,
+        water_threshold=config.stomatal_threshold,
+        steepness=config.stomatal_steepness,
+        min_conductance=config.stomatal_min,
+    )
+    transpiration = config.transpiration_rate * float(state.leaves) * light
+    drought_dmg = surrogates.drought_damage(
+        water=state.water,
+        water_critical=config.drought_critical,
+        steepness=config.drought_steepness,
+        max_damage=config.drought_max_damage,
+    )
+
     return {
         "photosynthesis": float(photo_energy),
         "maintenance": float(maintenance),
@@ -355,6 +397,11 @@ def diagnose_energy_budget(
         "leaf_efficiency": leaf_eff,
         "structural_load": float(load),
         "structural_capacity": float(capacity),
+        # Drought mechanics
+        "stomatal_conductance": float(stomatal),
+        "transpiration": transpiration,
+        "drought_damage": float(drought_dmg),
+        "water_internal": float(state.water),
     }
 
 

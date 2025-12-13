@@ -293,6 +293,20 @@ class SimConfig:
     # This makes drought actually force root investment
     transpiration_rate: float = 0.15  # Water lost per unit leaf per unit light
 
+    # Stomatal closure parameters (A)
+    # When internal water is low, stomata close to conserve water
+    # This reduces photosynthesis but prevents desiccation
+    stomatal_threshold: float = 0.25  # Water level where stomata start closing
+    stomatal_steepness: float = 10.0  # How sharply stomata respond
+    stomatal_min: float = 0.1  # Minimum conductance (keeps some gradient)
+
+    # Drought leaf damage parameters (B)
+    # When water drops critically low, leaves die back (senescence)
+    # This is the "nuclear option" for water conservation
+    drought_critical: float = 0.15  # Water level where damage starts
+    drought_steepness: float = 15.0  # How sharply damage ramps up
+    drought_max_damage: float = 0.25  # Maximum daily leaf loss (25%)
+
     # Flowering and seed production
     flowering_maturity: float = 0.4  # Season progress (0-1) before flowers can grow
     flowering_trunk_threshold: float = 0.2  # Minimum trunk to support flowers

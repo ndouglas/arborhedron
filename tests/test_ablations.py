@@ -415,3 +415,249 @@ class TestGradientHealthAblation:
         # Gradient exists at low resources
         grad_low = float(grad_fn(0.01))
         assert grad_low > 0
+
+
+class TestStomatalClosureAblation:
+    """Tests proving stomatal closure gates photosynthesis under drought."""
+
+    def test_low_water_reduces_photosynthesis(self) -> None:
+        """Low internal water causes stomata to close, reducing photosynthesis."""
+        config = SimConfig()
+
+        # State with normal water
+        state_normal = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.5),  # Above threshold
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.3),
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(1.0),
+            flowers=jnp.array(0.0),
+        )
+
+        # State with low water
+        state_drought = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.1),  # Below threshold
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.3),
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(1.0),
+            flowers=jnp.array(0.0),
+        )
+
+        alloc = Allocation(
+            roots=jnp.array(0.2),
+            trunk=jnp.array(0.2),
+            shoots=jnp.array(0.2),
+            leaves=jnp.array(0.3),
+            flowers=jnp.array(0.1),
+        )
+
+        # Step both states forward
+        new_state_normal = step(
+            state_normal, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50
+        )
+        new_state_drought = step(
+            state_drought, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50
+        )
+
+        # The drought state should gain less energy due to stomatal closure
+        # (Even though light and moisture are the same externally)
+        energy_gain_normal = float(new_state_normal.energy - state_normal.energy)
+        energy_gain_drought = float(new_state_drought.energy - state_drought.energy)
+
+        # Drought state has lower effective photosynthesis
+        # Note: both may be negative due to maintenance, but drought should be more negative
+        assert energy_gain_drought < energy_gain_normal
+
+    def test_stomatal_conductance_gradient_exists(self) -> None:
+        """Gradient flows through stomatal conductance."""
+
+        def conductance_rate(water):
+            return surrogates.stomatal_conductance(
+                water=water,
+                water_threshold=0.25,
+                steepness=10.0,
+                min_conductance=0.1,
+            )
+
+        grad_fn = grad(conductance_rate)
+
+        # Gradient should exist at low water (where stomata respond)
+        grad_low = float(grad_fn(0.15))
+        assert grad_low > 0  # Gradient exists and is positive (more water = more conductance)
+
+
+class TestDroughtLeafSenescenceAblation:
+    """Tests proving drought leaf senescence damages leaves under severe drought."""
+
+    def test_critical_drought_damages_leaves(self) -> None:
+        """When water is critically low, leaves die back."""
+        config = SimConfig()
+
+        # State with critically low water
+        state = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.05),  # Below drought_critical (0.15)
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.3),
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(2.0),  # Start with significant leaves
+            flowers=jnp.array(0.0),
+        )
+
+        alloc = Allocation(
+            roots=jnp.array(0.2),
+            trunk=jnp.array(0.2),
+            shoots=jnp.array(0.2),
+            leaves=jnp.array(0.3),
+            flowers=jnp.array(0.1),
+        )
+
+        # Step forward
+        new_state = step(
+            state, alloc, light=0.7, moisture=0.1, wind=0.1, config=config, day=50
+        )
+
+        # Leaves should be significantly reduced due to drought damage
+        # Even accounting for growth, leaves should decrease
+        leaves_change = float(new_state.leaves - state.leaves)
+        # At critical drought, we expect significant leaf loss
+        assert leaves_change < 0  # Net leaf loss
+
+    def test_adequate_water_no_drought_damage(self) -> None:
+        """When water is adequate, no drought damage occurs."""
+        config = SimConfig()
+
+        # State with adequate water
+        state = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.5),  # Well above drought_critical
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.3),
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(2.0),
+            flowers=jnp.array(0.0),
+        )
+
+        alloc = Allocation(
+            roots=jnp.array(0.2),
+            trunk=jnp.array(0.2),
+            shoots=jnp.array(0.2),
+            leaves=jnp.array(0.3),
+            flowers=jnp.array(0.1),
+        )
+
+        # Step forward
+        new_state = step(
+            state, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50
+        )
+
+        # With adequate water, leaves should grow (or at least not suffer drought damage)
+        drought_damage = surrogates.drought_damage(
+            water=0.5,
+            water_critical=config.drought_critical,
+            steepness=config.drought_steepness,
+            max_damage=config.drought_max_damage,
+        )
+        # Drought damage should be essentially zero
+        assert float(drought_damage) < 0.01
+
+
+class TestTranspirationAblation:
+    """Tests proving transpiration creates water pressure on leaves."""
+
+    def test_more_leaves_more_water_loss(self) -> None:
+        """More leaves means more water lost to transpiration."""
+        config = SimConfig()
+
+        # State with few leaves
+        state_few_leaves = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.5),
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.3),
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(0.5),
+            flowers=jnp.array(0.0),
+        )
+
+        # State with many leaves
+        state_many_leaves = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.5),
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.3),
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(3.0),  # 6x more leaves
+            flowers=jnp.array(0.0),
+        )
+
+        alloc = Allocation(
+            roots=jnp.array(0.2),
+            trunk=jnp.array(0.2),
+            shoots=jnp.array(0.2),
+            leaves=jnp.array(0.3),
+            flowers=jnp.array(0.1),
+        )
+
+        # Step both forward
+        new_few = step(
+            state_few_leaves, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50
+        )
+        new_many = step(
+            state_many_leaves, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50
+        )
+
+        # More leaves = more transpiration = less water remaining
+        # Note: starting water is the same, so we compare final water levels
+        # (accounting for the fact that more leaves also means more photosynthesis)
+        water_loss_few = float(state_few_leaves.water - new_few.water)
+        water_loss_many = float(state_many_leaves.water - new_many.water)
+
+        # Many leaves should lose more water (net) due to higher transpiration
+        # This creates pressure to invest in roots in dry conditions
+        assert water_loss_many > water_loss_few
+
+    def test_high_light_increases_transpiration(self) -> None:
+        """More light means more transpiration (stomata open wider)."""
+        config = SimConfig()
+
+        state = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.5),
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.3),
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(2.0),
+            flowers=jnp.array(0.0),
+        )
+
+        alloc = Allocation(
+            roots=jnp.array(0.2),
+            trunk=jnp.array(0.2),
+            shoots=jnp.array(0.2),
+            leaves=jnp.array(0.3),
+            flowers=jnp.array(0.1),
+        )
+
+        # Low light
+        new_low_light = step(
+            state, alloc, light=0.3, moisture=0.6, wind=0.1, config=config, day=50
+        )
+        # High light
+        new_high_light = step(
+            state, alloc, light=0.9, moisture=0.6, wind=0.1, config=config, day=50
+        )
+
+        # High light = more transpiration = less water
+        # (Note: high light also = more photosynthesis = more energy)
+        assert float(new_high_light.water) < float(new_low_light.water)

@@ -541,3 +541,165 @@ class TestSeedProduction:
             conversion=10.0,
         )
         assert seeds >= 0.0
+
+
+class TestStomatalConductance:
+    """Tests for stomatal conductance (drought response A)."""
+
+    def test_high_water_full_conductance(self) -> None:
+        """With plenty of water, stomata are fully open."""
+        result = surrogates.stomatal_conductance(
+            water=1.0,
+            water_threshold=0.25,
+            steepness=10.0,
+            min_conductance=0.1,
+        )
+        assert float(result) > 0.95  # Nearly 1.0
+
+    def test_low_water_reduced_conductance(self) -> None:
+        """With low water, stomata close (reduced conductance)."""
+        result = surrogates.stomatal_conductance(
+            water=0.05,
+            water_threshold=0.25,
+            steepness=10.0,
+            min_conductance=0.1,
+        )
+        # Should be close to min_conductance (soft sigmoid, not hard cutoff)
+        assert float(result) < 0.25  # Significantly reduced
+        assert float(result) >= 0.1  # Never below min
+
+    def test_threshold_gives_half_range(self) -> None:
+        """At threshold, conductance should be about midway."""
+        threshold = 0.25
+        result = surrogates.stomatal_conductance(
+            water=threshold,
+            water_threshold=threshold,
+            steepness=10.0,
+            min_conductance=0.1,
+        )
+        # sigmoid(0) = 0.5, so result = 0.1 + 0.9 * 0.5 = 0.55
+        assert jnp.isclose(result, 0.55, atol=0.05)
+
+    def test_min_conductance_preserved(self) -> None:
+        """Even at zero water, conductance is at minimum."""
+        result = surrogates.stomatal_conductance(
+            water=0.0,
+            water_threshold=0.25,
+            steepness=10.0,
+            min_conductance=0.1,
+        )
+        assert float(result) >= 0.1
+
+    def test_output_bounded(self) -> None:
+        """Conductance is always in [min, 1]."""
+        water_levels = jnp.linspace(0.0, 1.0, 50)
+        for w in water_levels:
+            result = surrogates.stomatal_conductance(
+                water=float(w),
+                water_threshold=0.25,
+                steepness=10.0,
+                min_conductance=0.1,
+            )
+            assert float(result) >= 0.1
+            assert float(result) <= 1.0
+
+
+class TestDroughtDamage:
+    """Tests for drought leaf damage (drought response B)."""
+
+    def test_high_water_no_damage(self) -> None:
+        """With plenty of water, no drought damage."""
+        result = surrogates.drought_damage(
+            water=0.5,
+            water_critical=0.15,
+            steepness=15.0,
+            max_damage=0.25,
+        )
+        assert float(result) < 0.01  # Essentially zero
+
+    def test_critical_water_gives_half_damage(self) -> None:
+        """At critical threshold, damage is about half max."""
+        result = surrogates.drought_damage(
+            water=0.15,  # At threshold
+            water_critical=0.15,
+            steepness=15.0,
+            max_damage=0.25,
+        )
+        # sigmoid(0) = 0.5, so damage = 0.25 * 0.5 = 0.125
+        assert jnp.isclose(result, 0.125, atol=0.02)
+
+    def test_very_low_water_full_damage(self) -> None:
+        """At very low water, damage approaches max."""
+        result = surrogates.drought_damage(
+            water=0.01,
+            water_critical=0.15,
+            steepness=15.0,
+            max_damage=0.25,
+        )
+        # Should be close to max_damage
+        assert float(result) > 0.2
+
+    def test_max_damage_capped(self) -> None:
+        """Damage never exceeds max_damage."""
+        result = surrogates.drought_damage(
+            water=0.0,
+            water_critical=0.15,
+            steepness=15.0,
+            max_damage=0.25,
+        )
+        assert float(result) <= 0.25 + 1e-6
+
+    def test_damage_nonnegative(self) -> None:
+        """Damage is never negative."""
+        water_levels = jnp.linspace(0.0, 1.0, 50)
+        for w in water_levels:
+            result = surrogates.drought_damage(
+                water=float(w),
+                water_critical=0.15,
+                steepness=15.0,
+                max_damage=0.25,
+            )
+            assert float(result) >= 0.0
+
+
+class TestWaterStress:
+    """Tests for water stress signal."""
+
+    def test_high_water_no_stress(self) -> None:
+        """With plenty of water, stress is low."""
+        result = surrogates.water_stress(
+            water=0.5,
+            water_threshold=0.2,
+            steepness=10.0,
+        )
+        assert float(result) < 0.1
+
+    def test_low_water_high_stress(self) -> None:
+        """With low water, stress is high."""
+        result = surrogates.water_stress(
+            water=0.05,
+            water_threshold=0.2,
+            steepness=10.0,
+        )
+        assert float(result) > 0.8
+
+    def test_threshold_gives_half_stress(self) -> None:
+        """At threshold, stress is 0.5."""
+        result = surrogates.water_stress(
+            water=0.2,
+            water_threshold=0.2,
+            steepness=10.0,
+        )
+        assert jnp.isclose(result, 0.5, atol=0.01)
+
+    def test_output_bounded(self) -> None:
+        """Stress is always in [0, 1]."""
+        water_levels = jnp.linspace(0.0, 1.0, 50)
+        for w in water_levels:
+            result = surrogates.water_stress(
+                water=float(w),
+                water_threshold=0.2,
+                steepness=10.0,
+            )
+            assert float(result) >= 0.0
+            assert float(result) <= 1.0

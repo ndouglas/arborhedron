@@ -521,6 +521,95 @@ def compute_capacity(trunk: Scalar, c_trunk: float, gamma: float) -> Array:
     return c_trunk * jnp.power(jnp.maximum(jnp.array(trunk), 1e-8), gamma)
 
 
+def water_stress(
+    water: Scalar,
+    water_threshold: float = 0.2,
+    steepness: float = 10.0,
+) -> Array:
+    """
+    Compute water stress level based on internal water store.
+
+    stress = σ(k · (threshold - water))
+
+    When water > threshold: stress ≈ 0
+    When water < threshold: stress → 1
+
+    This is the inverse of a "water sufficiency" gate.
+
+    Args:
+        water: Internal water store
+        water_threshold: Water level where stress reaches 50%
+        steepness: How sharply stress ramps up (recommend 8-15)
+
+    Returns:
+        Stress level in [0, 1]
+    """
+    return sigmoid(steepness * (water_threshold - jnp.array(water)))
+
+
+def stomatal_conductance(
+    water: Scalar,
+    water_threshold: float = 0.2,
+    steepness: float = 10.0,
+    min_conductance: float = 0.1,
+) -> Array:
+    """
+    Compute stomatal conductance based on internal water.
+
+    When water is low, stomata close to conserve water, reducing
+    photosynthesis but preventing desiccation.
+
+    conductance = min + (1 - min) · σ(k · (water - threshold))
+
+    When water > threshold: conductance → 1 (stomata open)
+    When water < threshold: conductance → min (stomata closed)
+
+    The minimum conductance prevents complete shutdown and preserves
+    gradient signal.
+
+    Args:
+        water: Internal water store
+        water_threshold: Water level where conductance reaches 50%
+        steepness: How sharply conductance changes
+        min_conductance: Minimum conductance when stomata closed (0.05-0.2)
+
+    Returns:
+        Conductance factor in [min_conductance, 1]
+    """
+    raw_conductance = sigmoid(steepness * (jnp.array(water) - water_threshold))
+    return min_conductance + (1.0 - min_conductance) * raw_conductance
+
+
+def drought_damage(
+    water: Scalar,
+    water_critical: float = 0.1,
+    steepness: float = 15.0,
+    max_damage: float = 0.3,
+) -> Array:
+    """
+    Compute leaf damage from severe water stress (senescence).
+
+    When water drops below critical threshold, leaves die back.
+    This is the "nuclear option" - the tree sacrifices leaves to survive.
+
+    damage = max_damage · σ(k · (threshold - water))
+
+    When water > threshold: damage ≈ 0
+    When water < threshold: damage → max_damage
+
+    Args:
+        water: Internal water store
+        water_critical: Critical water level for damage onset
+        steepness: How sharply damage ramps up (recommend 10-20)
+        max_damage: Maximum daily leaf loss fraction (0.2-0.4)
+
+    Returns:
+        Damage factor in [0, max_damage]
+    """
+    raw_stress = sigmoid(steepness * (water_critical - jnp.array(water)))
+    return max_damage * raw_stress
+
+
 def growth_efficiency(
     water: Scalar,
     nutrients: Scalar,
