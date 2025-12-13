@@ -29,24 +29,32 @@ class TreeState(NamedTuple):
     Complete state of a tree at a given timestep.
 
     All values are JAX arrays (scalars) and must be nonnegative.
+
+    Note: `water` is internal plant water (xylem/cells), while `soil_water`
+    is the available water in the soil that roots can access.
     """
 
     energy: Array  # E: Energy store
-    water: Array  # W: Water store
+    water: Array  # W: Internal water store (plant tissue)
     nutrients: Array  # N: Nutrient store
     roots: Array  # R: Root biomass
     trunk: Array  # T: Trunk/wood biomass
     shoots: Array  # S: Shoot biomass
     leaves: Array  # L: Leaf biomass
     flowers: Array  # F: Flower biomass
+    soil_water: Array  # SW: Soil water reservoir (new!)
 
     @classmethod
-    def initial(cls, energy: float = 1.0) -> "TreeState":
+    def initial(cls, energy: float = 1.0, soil_water: float = 0.5) -> "TreeState":
         """Create initial state for a seed with given energy.
 
         Start with enough leaves/roots to bootstrap photosynthesis.
         A seed germinates with cotyledon leaves, initial root structure,
         and a small hypocotyl (stem) for water transport.
+
+        Args:
+            energy: Starting energy reserve
+            soil_water: Initial soil water level (depends on climate)
         """
         eps = 1e-4  # Small but nonzero for numerical stability
         return cls(
@@ -58,6 +66,7 @@ class TreeState(NamedTuple):
             shoots=jnp.array(0.05),
             leaves=jnp.array(0.2),  # Cotyledon leaves for initial photosynthesis
             flowers=jnp.array(eps),
+            soil_water=jnp.array(soil_water),  # Soil water reservoir
         )
 
     def is_valid(self) -> Array:
@@ -73,6 +82,7 @@ class TreeState(NamedTuple):
                     self.shoots >= 0,
                     self.leaves >= 0,
                     self.flowers >= 0,
+                    self.soil_water >= 0,
                 ]
             )
         )
@@ -88,6 +98,7 @@ class TreeState(NamedTuple):
                         self.shoots,
                         self.leaves,
                         self.flowers,
+                        self.soil_water,
                     ]
                 )
             )
@@ -333,3 +344,12 @@ class SimConfig:
     # Store decay (resources decay slightly each day)
     water_decay: float = 0.05
     nutrient_decay: float = 0.03
+
+    # Soil water reservoir parameters
+    # The soil is a finite reservoir that moisture replenishes and roots deplete.
+    # This makes drought *actually* create water scarcity.
+    soil_water_capacity: float = 2.0  # Maximum soil water the reservoir can hold
+    soil_recharge_rate: float = 0.3  # How fast moisture replenishes soil (per day)
+    soil_drain_rate: float = 0.02  # Natural drainage/evaporation from soil
+    # Root uptake now pulls from soil_water instead of being directly gated by moisture
+    # This means: drought → low soil recharge → soil depletes → roots can't find water

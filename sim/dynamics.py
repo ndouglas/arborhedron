@@ -71,17 +71,28 @@ def step(
     shoots = state.shoots
     leaves = state.leaves
     flowers = state.flowers
+    soil_water = state.soil_water
 
-    # 1. Root uptake of water and nutrients (with inverted-U moisture response)
-    water_uptake, nutrient_uptake = surrogates.root_uptake(
-        roots=roots,
+    # 0. Soil water reservoir dynamics
+    # Moisture replenishes soil, roots deplete it - this creates REAL water scarcity
+    recharge = surrogates.soil_water_recharge(
         moisture=moisture,
+        soil_water=soil_water,
+        soil_capacity=config.soil_water_capacity,
+        recharge_rate=config.soil_recharge_rate,
+    )
+    soil_water = soil_water + recharge
+
+    # 1. Root uptake from soil reservoir (creates actual water scarcity)
+    water_uptake, nutrient_uptake, water_extracted = surrogates.root_uptake_from_soil(
+        roots=roots,
+        soil_water=soil_water,
         u_water_max=config.u_water_max,
         u_nutrient_max=config.u_nutrient_max,
         k_root=config.k_root,
-        m_opt=config.moisture_optimum,
-        m_sigma=config.moisture_sigma,
     )
+    # Deplete soil water and add to internal water
+    soil_water = soil_water - water_extracted
     water = water + water_uptake
     nutrients = nutrients + nutrient_uptake
 
@@ -287,6 +298,9 @@ def step(
     water = water * (1.0 - config.water_decay)
     nutrients = nutrients * (1.0 - config.nutrient_decay)
 
+    # 10b. Soil water drainage (natural loss to deep soil / evaporation)
+    soil_water = soil_water * (1.0 - config.soil_drain_rate)
+
     # 11. Clamp all values to nonnegative
     # Use jnp.maximum which has well-defined gradients
     energy = jnp.maximum(energy, 0.0)
@@ -297,6 +311,7 @@ def step(
     shoots = jnp.maximum(shoots, 0.0)
     leaves = jnp.maximum(leaves, 0.0)
     flowers = jnp.maximum(flowers, 0.0)
+    soil_water = jnp.maximum(soil_water, 0.0)
 
     return TreeState(
         energy=energy,
@@ -307,6 +322,7 @@ def step(
         shoots=shoots,
         leaves=leaves,
         flowers=flowers,
+        soil_water=soil_water,
     )
 
 
@@ -323,10 +339,19 @@ def diagnose_energy_budget(
 
     Returns a dictionary with all flows for debugging.
     """
-    # Root uptake (for water/nutrients that affect photosynthesis)
-    water_uptake, nutrient_uptake = surrogates.root_uptake(
-        roots=state.roots,
+    # Soil water recharge
+    recharge = surrogates.soil_water_recharge(
         moisture=moisture,
+        soil_water=state.soil_water,
+        soil_capacity=config.soil_water_capacity,
+        recharge_rate=config.soil_recharge_rate,
+    )
+    soil_water_after_recharge = state.soil_water + recharge
+
+    # Root uptake from soil reservoir
+    water_uptake, nutrient_uptake, water_extracted = surrogates.root_uptake_from_soil(
+        roots=state.roots,
+        soil_water=soil_water_after_recharge,
         u_water_max=config.u_water_max,
         u_nutrient_max=config.u_nutrient_max,
         k_root=config.k_root,
@@ -428,6 +453,10 @@ def diagnose_energy_budget(
         "transpiration": transpiration,
         "drought_damage": float(drought_dmg),
         "water_internal": float(state.water),
+        # Soil water reservoir
+        "soil_water": float(state.soil_water),
+        "soil_recharge": float(recharge),
+        "soil_water_extracted": float(water_extracted),
     }
 
 

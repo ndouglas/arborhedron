@@ -21,6 +21,7 @@ def make_test_state(
     shoots: float = 0.2,
     leaves: float = 0.5,
     flowers: float = 0.0,
+    soil_water: float = 0.5,
 ) -> TreeState:
     """Create a test state with given values."""
     return TreeState(
@@ -32,6 +33,7 @@ def make_test_state(
         shoots=jnp.array(shoots),
         leaves=jnp.array(leaves),
         flowers=jnp.array(flowers),
+        soil_water=jnp.array(soil_water),
     )
 
 

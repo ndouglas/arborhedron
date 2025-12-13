@@ -686,6 +686,81 @@ def flower_wind_damage(
     return alpha_flower * base_damage * (1.0 - protection)
 
 
+def soil_water_recharge(
+    moisture: Scalar,
+    soil_water: Scalar,
+    soil_capacity: float,
+    recharge_rate: float,
+) -> Array:
+    """
+    Compute soil water recharge from environmental moisture.
+
+    Recharge = recharge_rate * moisture * (1 - soil_water/capacity)
+
+    The (1 - soil/capacity) term creates diminishing returns as soil fills up,
+    preventing unbounded accumulation.
+
+    Args:
+        moisture: Environmental moisture signal [0, 1]
+        soil_water: Current soil water level
+        soil_capacity: Maximum soil water capacity
+        recharge_rate: Rate at which moisture replenishes soil
+
+    Returns:
+        Water added to soil this timestep
+    """
+    m = jnp.array(moisture)
+    sw = jnp.array(soil_water)
+    # Diminishing returns as soil fills
+    headroom = jnp.maximum(1.0 - sw / soil_capacity, 0.0)
+    return recharge_rate * m * headroom
+
+
+def root_uptake_from_soil(
+    roots: Scalar,
+    soil_water: Scalar,
+    u_water_max: float,
+    u_nutrient_max: float,
+    k_root: float,
+    k_soil: float = 0.3,
+) -> tuple[Array, Array, Array]:
+    """
+    Root uptake of water and nutrients from soil reservoir.
+
+    Water uptake is limited by BOTH root biomass AND available soil water.
+    This creates actual water scarcity during drought.
+
+    U_W = U_W_max · f_R(R) · f_SW(SW)
+    U_N = U_N_max · f_R(R) · f_SW(SW)
+
+    The actual water removed from soil is min(U_W, soil_water) to prevent
+    extracting more water than exists.
+
+    Args:
+        roots: Root biomass
+        soil_water: Available soil water
+        u_water_max: Maximum water uptake rate
+        u_nutrient_max: Maximum nutrient uptake rate
+        k_root: Root half-saturation constant
+        k_soil: Soil water half-saturation (below this, uptake is limited)
+
+    Returns:
+        Tuple of (water_uptake, nutrient_uptake, water_extracted_from_soil)
+    """
+    root_eff = saturation(jnp.array(roots), k_root)
+    # Soil water availability - can't extract what isn't there
+    soil_eff = saturation(jnp.array(soil_water), k_soil)
+
+    water_demand = u_water_max * root_eff * soil_eff
+    nutrient_uptake = u_nutrient_max * root_eff * soil_eff
+
+    # Can't extract more water than exists in soil
+    water_extracted = jnp.minimum(water_demand, jnp.array(soil_water))
+    water_uptake = water_extracted
+
+    return water_uptake, nutrient_uptake, water_extracted
+
+
 def growth_efficiency(
     water: Scalar,
     nutrients: Scalar,

@@ -13,6 +13,31 @@ from sim.config import Allocation, SimConfig, TreeState
 from sim.dynamics import step
 
 
+def make_test_state(
+    energy: float = 1.0,
+    water: float = 0.5,
+    nutrients: float = 0.5,
+    roots: float = 0.5,
+    trunk: float = 0.3,
+    shoots: float = 0.2,
+    leaves: float = 0.5,
+    flowers: float = 0.0,
+    soil_water: float = 0.5,
+) -> TreeState:
+    """Create a test state with given values."""
+    return TreeState(
+        energy=jnp.array(energy),
+        water=jnp.array(water),
+        nutrients=jnp.array(nutrients),
+        roots=jnp.array(roots),
+        trunk=jnp.array(trunk),
+        shoots=jnp.array(shoots),
+        leaves=jnp.array(leaves),
+        flowers=jnp.array(flowers),
+        soil_water=jnp.array(soil_water),
+    )
+
+
 class TestSelfShadingAblation:
     """Tests proving self-shading (Beer-Lambert) prevents runaway leaf growth."""
 
@@ -133,15 +158,15 @@ class TestResourceConsumptionAblation:
 
     def test_without_consumption_energy_unbounded(self) -> None:
         """Without resource consumption, photosynthesis could be infinite."""
-        state = TreeState(
-            energy=jnp.array(0.5),
-            water=jnp.array(0.5),
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(1.0),
-            trunk=jnp.array(0.5),
-            shoots=jnp.array(0.5),
-            leaves=jnp.array(2.0),
-            flowers=jnp.array(0.0),
+        state = make_test_state(
+            energy=0.5,
+            water=0.5,
+            nutrients=0.5,
+            roots=1.0,
+            trunk=0.5,
+            shoots=0.5,
+            leaves=2.0,
+            flowers=0.0,
         )
         config = SimConfig()
 
@@ -200,15 +225,15 @@ class TestInvestmentGatingAblation:
     def test_without_gating_low_energy_death_spiral(self) -> None:
         """Without investment gating, low energy leads to death spiral."""
         # Start with very low energy
-        state = TreeState(
-            energy=jnp.array(0.1),  # Very low
-            water=jnp.array(0.3),
-            nutrients=jnp.array(0.3),
-            roots=jnp.array(0.3),  # Maintenance costs exist
-            trunk=jnp.array(0.2),
-            shoots=jnp.array(0.2),
-            leaves=jnp.array(0.3),
-            flowers=jnp.array(0.0),
+        state = make_test_state(
+            energy=0.1,  # Very low
+            water=0.3,
+            nutrients=0.3,
+            roots=0.3,  # Maintenance costs exist
+            trunk=0.2,
+            shoots=0.2,
+            leaves=0.3,
+            flowers=0.0,
         )
 
         # Config with high investment rate (simulating no gating)
@@ -450,27 +475,27 @@ class TestStomatalClosureAblation:
         config = SimConfig()
 
         # State with normal water
-        state_normal = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.5),  # Above threshold
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.3),
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(1.0),
-            flowers=jnp.array(0.0),
+        state_normal = make_test_state(
+            energy=1.0,
+            water=0.5,  # Above threshold
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.3,
+            shoots=0.3,
+            leaves=1.0,
+            flowers=0.0,
         )
 
         # State with low water
-        state_drought = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.1),  # Below threshold
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.3),
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(1.0),
-            flowers=jnp.array(0.0),
+        state_drought = make_test_state(
+            energy=1.0,
+            water=0.1,  # Below threshold
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.3,
+            shoots=0.3,
+            leaves=1.0,
+            flowers=0.0,
         )
 
         alloc = Allocation(
@@ -538,15 +563,15 @@ class TestDroughtLeafSenescenceAblation:
         config = SimConfig()
 
         # State with critically low water
-        state = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.05),  # Below drought_critical (0.15)
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.3),
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(2.0),  # Start with significant leaves
-            flowers=jnp.array(0.0),
+        state = make_test_state(
+            energy=1.0,
+            water=0.05,  # Below drought_critical (0.15)
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.3,
+            shoots=0.3,
+            leaves=2.0,  # Start with significant leaves
+            flowers=0.0,
         )
 
         alloc = Allocation(
@@ -573,15 +598,15 @@ class TestDroughtLeafSenescenceAblation:
         config = SimConfig()
 
         # State with adequate water
-        state = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.5),  # Well above drought_critical
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.3),
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(2.0),
-            flowers=jnp.array(0.0),
+        state = make_test_state(
+            energy=1.0,
+            water=0.5,  # Well above drought_critical
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.3,
+            shoots=0.3,
+            leaves=2.0,
+            flowers=0.0,
         )
 
         alloc = Allocation(
@@ -614,27 +639,27 @@ class TestTranspirationAblation:
         config = SimConfig()
 
         # State with few leaves
-        state_few_leaves = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.5),
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.3),
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(0.5),
-            flowers=jnp.array(0.0),
+        state_few_leaves = make_test_state(
+            energy=1.0,
+            water=0.5,
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.3,
+            shoots=0.3,
+            leaves=0.5,
+            flowers=0.0,
         )
 
         # State with many leaves
-        state_many_leaves = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.5),
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.3),
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(3.0),  # 6x more leaves
-            flowers=jnp.array(0.0),
+        state_many_leaves = make_test_state(
+            energy=1.0,
+            water=0.5,
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.3,
+            shoots=0.3,
+            leaves=3.0,  # 6x more leaves
+            flowers=0.0,
         )
 
         alloc = Allocation(
@@ -679,15 +704,15 @@ class TestTranspirationAblation:
         """More light means more transpiration (stomata open wider)."""
         config = SimConfig()
 
-        state = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.5),
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.3),
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(2.0),
-            flowers=jnp.array(0.0),
+        state = make_test_state(
+            energy=1.0,
+            water=0.5,
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.3,
+            shoots=0.3,
+            leaves=2.0,
+            flowers=0.0,
         )
 
         alloc = Allocation(
@@ -720,27 +745,27 @@ class TestPhenologyLeavesGateAblation:
         config = SimConfig()
 
         # State with trunk but no leaves (weird, but tests the mechanic)
-        state_no_leaves = TreeState(
-            energy=jnp.array(2.0),
-            water=jnp.array(0.5),
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.5),  # Above threshold
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(0.1),  # Below threshold (0.3)
-            flowers=jnp.array(0.0),
+        state_no_leaves = make_test_state(
+            energy=2.0,
+            water=0.5,
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.5,  # Above threshold
+            shoots=0.3,
+            leaves=0.1,  # Below threshold (0.3)
+            flowers=0.0,
         )
 
         # State with both trunk and leaves
-        state_with_leaves = TreeState(
-            energy=jnp.array(2.0),
-            water=jnp.array(0.5),
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.5),  # Above threshold
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(0.6),  # Above threshold
-            flowers=jnp.array(0.0),
+        state_with_leaves = make_test_state(
+            energy=2.0,
+            water=0.5,
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.5,  # Above threshold
+            shoots=0.3,
+            leaves=0.6,  # Above threshold
+            flowers=0.0,
         )
 
         # Flower-heavy allocation
@@ -824,15 +849,15 @@ class TestFlowerWindDamageAblation:
         config = SimConfig()
 
         # State with flowers but minimal trunk
-        state = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.5),
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.05),  # Almost no trunk
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(0.5),
-            flowers=jnp.array(1.0),  # Has flowers
+        state = make_test_state(
+            energy=1.0,
+            water=0.5,
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.05,  # Almost no trunk
+            shoots=0.3,
+            leaves=0.5,
+            flowers=1.0,  # Has flowers
         )
 
         alloc = Allocation(
@@ -859,27 +884,27 @@ class TestFlowerWindDamageAblation:
         config = SimConfig()
 
         # State with flowers and good trunk
-        state_protected = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.5),
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(1.0),  # Substantial trunk
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(0.5),
-            flowers=jnp.array(1.0),
+        state_protected = make_test_state(
+            energy=1.0,
+            water=0.5,
+            nutrients=0.5,
+            roots=0.5,
+            trunk=1.0,  # Substantial trunk
+            shoots=0.3,
+            leaves=0.5,
+            flowers=1.0,
         )
 
         # State with flowers but no trunk
-        state_unprotected = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.5),
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.05),
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(0.5),
-            flowers=jnp.array(1.0),
+        state_unprotected = make_test_state(
+            energy=1.0,
+            water=0.5,
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.05,
+            shoots=0.3,
+            leaves=0.5,
+            flowers=1.0,
         )
 
         alloc = Allocation(
@@ -931,15 +956,15 @@ class TestFlowerWindDamageAblation:
         config = SimConfig()
 
         # State with trunk, leaves and flowers
-        state = TreeState(
-            energy=jnp.array(1.0),
-            water=jnp.array(0.5),
-            nutrients=jnp.array(0.5),
-            roots=jnp.array(0.5),
-            trunk=jnp.array(0.5),  # Moderate trunk
-            shoots=jnp.array(0.3),
-            leaves=jnp.array(1.0),
-            flowers=jnp.array(1.0),
+        state = make_test_state(
+            energy=1.0,
+            water=0.5,
+            nutrients=0.5,
+            roots=0.5,
+            trunk=0.5,  # Moderate trunk
+            shoots=0.3,
+            leaves=1.0,
+            flowers=1.0,
         )
 
         alloc = Allocation(
