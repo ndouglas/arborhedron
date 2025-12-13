@@ -253,9 +253,9 @@ class SimConfig:
     # Moisture optimum (inverted-U response)
     # Too dry: reduced uptake (drought stress)
     # Too wet: reduced uptake (root rot / anoxia)
-    # Sigma widened so sub-optimal moisture is survivable (was 0.25)
+    # Sigma widened so sub-optimal moisture is survivable (was 0.25, then 0.35)
     moisture_optimum: float = 0.6  # Optimal moisture level
-    moisture_sigma: float = 0.35  # Width of optimal moisture band
+    moisture_sigma: float = 0.45  # Width of optimal moisture band
 
     # Maintenance costs (per unit biomass per day)
     m_root: float = 0.01
@@ -349,7 +349,7 @@ class SimConfig:
     # The soil is a finite reservoir that moisture replenishes and roots deplete.
     # This makes drought *actually* create water scarcity.
     soil_water_capacity: float = 2.0  # Maximum soil water the reservoir can hold
-    soil_recharge_rate: float = 0.3  # How fast moisture replenishes soil (per day)
+    soil_recharge_rate: float = 0.4  # How fast moisture replenishes soil (per day)
     soil_drain_rate: float = 0.02  # Natural drainage/evaporation from soil
     # Root uptake now pulls from soil_water instead of being directly gated by moisture
     # This means: drought → low soil recharge → soil depletes → roots can't find water
