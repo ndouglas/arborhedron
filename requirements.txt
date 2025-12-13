@@ -1,3 +1,24 @@
+# Core dependencies
 tesseract-core==1.2.0
 tesseract-jax==0.2.2
 jax[cpu]==0.8.1
+
+# Neural network library (JAX-based, PyTorch-like API)
+equinox
+
+# Optimization library for JAX
+optax
+
+# Visualization
+matplotlib
+numpy
+
+# Jupyter support
+ipykernel
+jupyter
+
+# Progress bars
+tqdm
+
+# For saving/loading
+pillow
