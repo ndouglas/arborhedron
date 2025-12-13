@@ -11,8 +11,8 @@ import jax.numpy as jnp
 import jax.random as jr
 from jax import Array
 
-from sim import dynamics, surrogates
-from sim.config import Allocation, ClimateConfig, SimConfig, TreeState
+from sim import surrogates
+from sim.config import SimConfig
 
 
 def sample_episode_distribution(
@@ -70,6 +70,7 @@ def compute_photosynthesis_gradients(
             k_light=config.k_light,
             k_water=config.k_water,
             k_nutrient=config.k_nutrient,
+            k_leaf=config.k_leaf,
         )
 
     # Compute gradients for each input

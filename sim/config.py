@@ -44,19 +44,19 @@ class TreeState(NamedTuple):
     def initial(cls, energy: float = 1.0) -> "TreeState":
         """Create initial state for a seed with given energy.
 
-        All biomass compartments start with small positive values
-        for numerical stability (avoids 0^gamma and helps gradients).
+        Start with enough leaves/roots to bootstrap photosynthesis.
+        A seed germinates with cotyledon leaves, initial root structure,
+        and a small hypocotyl (stem) for water transport.
         """
-        # Small eps for seed-safety (nonzero everywhere)
-        eps = 1e-4
+        eps = 1e-4  # Small but nonzero for numerical stability
         return cls(
             energy=jnp.array(energy),
-            water=jnp.array(0.1),
-            nutrients=jnp.array(0.1),
-            roots=jnp.array(0.01),
-            trunk=jnp.array(eps),  # Small but nonzero for capacity calc
-            shoots=jnp.array(eps),
-            leaves=jnp.array(0.01),
+            water=jnp.array(0.3),
+            nutrients=jnp.array(0.3),
+            roots=jnp.array(0.1),  # Initial root system
+            trunk=jnp.array(0.05),  # Hypocotyl for water transport
+            shoots=jnp.array(0.05),
+            leaves=jnp.array(0.2),  # Cotyledon leaves for initial photosynthesis
             flowers=jnp.array(eps),
         )
 
@@ -164,7 +164,9 @@ class ClimateConfig:
         """A mild climate with moderate, slow-varying stressors."""
         return cls(
             light=StressParams(offset=0.7, amplitude=0.2, frequency=0.1, phase=0.0),
-            moisture=StressParams(offset=0.6, amplitude=0.15, frequency=0.08, phase=1.0),
+            moisture=StressParams(
+                offset=0.6, amplitude=0.15, frequency=0.08, phase=1.0
+            ),
             wind=StressParams(offset=0.2, amplitude=0.1, frequency=0.15, phase=0.5),
         )
 
@@ -182,7 +184,9 @@ class ClimateConfig:
         """A windy climate with frequent strong gusts."""
         return cls(
             light=StressParams(offset=0.6, amplitude=0.2, frequency=0.1, phase=0.0),
-            moisture=StressParams(offset=0.5, amplitude=0.15, frequency=0.08, phase=0.0),
+            moisture=StressParams(
+                offset=0.5, amplitude=0.15, frequency=0.08, phase=0.0
+            ),
             wind=StressParams(offset=0.5, amplitude=0.3, frequency=0.2, phase=0.0),
         )
 
@@ -199,6 +203,7 @@ class SimConfig:
     # Simulation parameters
     num_days: int = 100
     seed_energy: float = 1.0
+    investment_rate: float = 0.3  # Fraction of energy to invest in growth each day
 
     # Photosynthesis parameters
     p_max: float = 0.5  # Maximum photosynthesis rate per unit leaf
@@ -208,6 +213,20 @@ class SimConfig:
     k_light: float = 0.3  # Light half-saturation (light in [0,1])
     k_water: float = 0.2  # Water half-saturation
     k_nutrient: float = 0.2  # Nutrient half-saturation
+    k_leaf: float = 1.5  # Leaf area extinction coefficient (Beer-Lambert self-shading)
+
+    # Resource consumption parameters
+    # Water and nutrients are consumed during photosynthesis and growth
+    c_water_photo: float = 0.1  # Water consumed per unit photosynthesis
+    c_nutrient_photo: float = 0.05  # Nutrient consumed per unit photosynthesis
+    c_water_growth: float = 0.2  # Water consumed per unit biomass growth
+    c_nutrient_growth: float = 0.15  # Nutrient consumed per unit biomass growth
+
+    # Transport bottleneck parameters
+    # Water delivery is limited by trunk capacity (xylem/phloem)
+    # W_delivered = min(W, kappa * T^beta)
+    kappa_transport: float = 2.0  # Transport capacity coefficient
+    beta_transport: float = 0.7  # Transport capacity exponent (< 1 for sublinear)
 
     # Root uptake parameters
     u_water_max: float = 0.3  # Maximum water uptake rate

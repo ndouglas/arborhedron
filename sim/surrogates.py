@@ -11,14 +11,14 @@ Key design principles:
 - Sigmoid gates for threshold behaviors
 """
 
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 from jax import Array
 from jax.nn import sigmoid, softplus
 
 # Type alias for values that can be either JAX arrays or Python floats
-Scalar = Union[Array, float]
+Scalar = Array | float
 
 if TYPE_CHECKING:
     from sim.config import TreeState
@@ -155,6 +155,31 @@ def structural_penalty(load: Scalar, capacity: Scalar) -> Array:
     return raw_penalty - baseline
 
 
+def leaf_area_efficiency(leaves: Scalar, k_leaf: float) -> Array:
+    """
+    Self-shading efficiency using Beer-Lambert law.
+
+    Models diminishing returns from leaf area due to self-shading:
+    f(L) = 1 - exp(-k_L * L)
+
+    Properties:
+    - f(0) = 0 (no leaves, no photosynthesis)
+    - f(L) → 1 as L → ∞ (saturates at high leaf area)
+    - df/dL = k_L * exp(-k_L * L) (gradient decreases with more leaves)
+
+    This prevents runaway leaf growth by making additional leaves
+    less valuable than the first few.
+
+    Args:
+        leaves: Leaf biomass
+        k_leaf: Light extinction coefficient (higher = faster saturation)
+
+    Returns:
+        Effective leaf area fraction in [0, 1)
+    """
+    return 1.0 - jnp.exp(-k_leaf * jnp.array(leaves))
+
+
 def photosynthesis(
     leaves: Scalar,
     light: Scalar,
@@ -164,21 +189,27 @@ def photosynthesis(
     k_light: float,
     k_water: float,
     k_nutrient: float,
+    k_leaf: float = 1.5,
     gradient_floor: float = 0.03,
 ) -> Array:
     """
     Combined photosynthesis rate with multiple limiting factors.
 
-    P = L · P_max · combined_efficiency
+    P = P_max · f_L(L) · combined_efficiency
 
-    where combined_efficiency uses a gradient-preserving floor:
+    where f_L uses Beer-Lambert self-shading:
+        f_L(L) = 1 - exp(-k_leaf * L)
 
+    and combined_efficiency uses a gradient-preserving floor:
         eff = eps + (1 - eps) · f_I(I) · f_W(W) · f_N(N)
 
     IMPORTANT: Pure multiplicative limiting (f_I * f_W * f_N) kills gradients
     when any factor is near 0 (common at seed stage). The floor ensures
     gradient signal flows even in resource-poor states, preventing the
     optimizer from getting stuck in "can't escape seed stage" local optima.
+
+    The Beer-Lambert self-shading prevents runaway leaf growth by making
+    additional leaves progressively less valuable (they shade lower leaves).
 
     Args:
         leaves: Leaf biomass
@@ -189,11 +220,16 @@ def photosynthesis(
         k_light: Light half-saturation constant
         k_water: Water half-saturation constant
         k_nutrient: Nutrient half-saturation constant
+        k_leaf: Leaf area extinction coefficient (higher = faster saturation)
         gradient_floor: Minimum efficiency floor (0.02-0.05 recommended)
 
     Returns:
         Energy produced this timestep
     """
+    # Self-shading: more leaves have diminishing returns
+    leaf_eff = leaf_area_efficiency(leaves, k_leaf)
+
+    # Resource limiting factors
     light_eff = saturation(jnp.array(light), k_light)
     water_eff = saturation(jnp.array(water), k_water)
     nutrient_eff = saturation(jnp.array(nutrients), k_nutrient)
@@ -202,7 +238,7 @@ def photosynthesis(
     raw_product = light_eff * water_eff * nutrient_eff
     combined_eff = gradient_floor + (1.0 - gradient_floor) * raw_product
 
-    return jnp.array(leaves) * p_max * combined_eff
+    return p_max * leaf_eff * combined_eff
 
 
 def root_uptake(
@@ -326,7 +362,32 @@ def compute_load(
     Returns:
         Total load
     """
-    return c_leaf * jnp.array(leaves) + c_shoot * jnp.array(shoots) + c_flower * jnp.array(flowers)
+    return (
+        c_leaf * jnp.array(leaves)
+        + c_shoot * jnp.array(shoots)
+        + c_flower * jnp.array(flowers)
+    )
+
+
+def transport_capacity(trunk: Scalar, kappa: float, beta: float) -> Array:
+    """
+    Compute water transport capacity based on trunk (xylem/phloem).
+
+    W_max = kappa * T^beta
+
+    The trunk limits how much water can be delivered to leaves.
+    This creates a natural constraint: you need trunk before you can
+    support a large canopy.
+
+    Args:
+        trunk: Trunk biomass
+        kappa: Transport capacity coefficient
+        beta: Transport capacity exponent (typically < 1 for sublinear)
+
+    Returns:
+        Maximum water that can be delivered per timestep
+    """
+    return kappa * jnp.power(jnp.maximum(jnp.array(trunk), 1e-8), beta)
 
 
 def compute_capacity(trunk: Scalar, c_trunk: float, gamma: float) -> Array:

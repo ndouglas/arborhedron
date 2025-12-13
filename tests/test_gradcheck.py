@@ -47,13 +47,19 @@ class TestGradientHealth:
 
         # Healthy gradients should be > 70%
         for name, metrics in report.items():
-            assert metrics["pct_healthy"] > 70.0, f"{name} has insufficient healthy gradients"
+            assert metrics["pct_healthy"] > 70.0, (
+                f"{name} has insufficient healthy gradients"
+            )
 
     def test_leaves_gradient_always_positive(self) -> None:
-        """Leaves gradient should always be positive due to floor."""
+        """Leaves gradient should always be positive."""
         key = jr.PRNGKey(42)
         report = gradient_health_report(key, SimConfig(), num_samples=500)
 
-        # Leaves min gradient should be > 0 (floor guarantees this)
-        assert report["leaves"]["min"] > 0.01
-        assert report["leaves"]["pct_healthy"] == 100.0
+        # With Beer-Lambert self-shading, leaf gradient decays at high L
+        # (this is intentional - diminishing returns prevent runaway)
+        # Gradient is: k * exp(-k*L) * eff, which can be small at high L
+        # But should still be positive (just not guaranteed > 0.01)
+        assert report["leaves"]["min"] > 0.0
+        # Most samples should have healthy gradients
+        assert report["leaves"]["pct_healthy"] > 50.0

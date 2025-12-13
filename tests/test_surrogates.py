@@ -91,23 +91,17 @@ class TestWindDamage:
 
     def test_low_wind_no_damage(self) -> None:
         """Below threshold, damage is near zero."""
-        result = surrogates.wind_damage(
-            jnp.array(0.1), threshold=0.5, steepness=10.0
-        )
+        result = surrogates.wind_damage(jnp.array(0.1), threshold=0.5, steepness=10.0)
         assert result < 0.02  # sigmoid(-4) ≈ 0.018
 
     def test_high_wind_full_damage(self) -> None:
         """Well above threshold, damage approaches 1."""
-        result = surrogates.wind_damage(
-            jnp.array(1.0), threshold=0.5, steepness=10.0
-        )
+        result = surrogates.wind_damage(jnp.array(1.0), threshold=0.5, steepness=10.0)
         assert result > 0.99
 
     def test_threshold_gives_half_damage(self) -> None:
         """At threshold, damage is 0.5."""
-        result = surrogates.wind_damage(
-            jnp.array(0.5), threshold=0.5, steepness=10.0
-        )
+        result = surrogates.wind_damage(jnp.array(0.5), threshold=0.5, steepness=10.0)
         assert jnp.isclose(result, 0.5, atol=0.01)
 
     def test_monotonically_increasing(self) -> None:
@@ -135,28 +129,60 @@ class TestStructuralPenalty:
 
     def test_penalty_when_unsupported(self) -> None:
         """When load > capacity, penalty is positive."""
-        penalty = surrogates.structural_penalty(
-            load=3.0, capacity=1.0
-        )
+        penalty = surrogates.structural_penalty(load=3.0, capacity=1.0)
         assert penalty > 1.5  # Should be roughly (3.0 - 1.0) = 2.0
 
     def test_smooth_transition(self) -> None:
         """Penalty transitions smoothly near equilibrium."""
         loads = jnp.linspace(0.5, 1.5, 20)
-        penalties = jnp.array([
-            surrogates.structural_penalty(load=float(l), capacity=1.0)
-            for l in loads
-        ])
+        penalties = jnp.array(
+            [surrogates.structural_penalty(load=float(l), capacity=1.0) for l in loads]
+        )
         # Check monotonically increasing
         diffs = jnp.diff(penalties)
         assert jnp.all(diffs >= 0)
+
+
+class TestLeafAreaEfficiency:
+    """Tests for Beer-Lambert self-shading function."""
+
+    def test_zero_leaves_zero_efficiency(self) -> None:
+        """f(0) = 1 - exp(0) = 0."""
+        result = surrogates.leaf_area_efficiency(jnp.array(0.0), k_leaf=1.5)
+        assert jnp.isclose(result, 0.0, atol=1e-6)
+
+    def test_approaches_one_at_high_leaves(self) -> None:
+        """f(L) → 1 as L → ∞."""
+        result = surrogates.leaf_area_efficiency(jnp.array(10.0), k_leaf=1.5)
+        assert result > 0.99
+
+    def test_monotonically_increasing(self) -> None:
+        """Efficiency increases with leaf biomass."""
+        leaves = jnp.linspace(0.0, 3.0, 20)
+        eff = surrogates.leaf_area_efficiency(leaves, k_leaf=1.5)
+        diffs = jnp.diff(eff)
+        assert jnp.all(diffs >= 0)
+
+    def test_higher_k_faster_saturation(self) -> None:
+        """Higher k_leaf means faster saturation."""
+        leaves = jnp.array(1.0)
+        eff_low_k = surrogates.leaf_area_efficiency(leaves, k_leaf=0.5)
+        eff_high_k = surrogates.leaf_area_efficiency(leaves, k_leaf=2.0)
+        assert eff_high_k > eff_low_k
+
+    def test_output_bounded_zero_one(self) -> None:
+        """Output is always in [0, 1)."""
+        leaves = jnp.linspace(0.0, 10.0, 100)
+        eff = surrogates.leaf_area_efficiency(leaves, k_leaf=1.5)
+        assert jnp.all(eff >= 0.0)
+        assert jnp.all(eff < 1.0)
 
 
 class TestPhotosynthesis:
     """Tests for the combined photosynthesis function."""
 
     def test_no_leaves_no_photosynthesis(self) -> None:
-        """Zero leaf biomass means zero photosynthesis."""
+        """Zero leaf biomass means zero photosynthesis (via Beer-Lambert)."""
         result = surrogates.photosynthesis(
             leaves=0.0,
             light=0.8,
@@ -166,6 +192,7 @@ class TestPhotosynthesis:
             k_light=0.3,
             k_water=0.2,
             k_nutrient=0.2,
+            k_leaf=1.5,
         )
         assert jnp.isclose(result, 0.0, atol=1e-6)
 
@@ -180,8 +207,9 @@ class TestPhotosynthesis:
             k_light=0.3,
             k_water=0.2,
             k_nutrient=0.2,
+            k_leaf=1.5,
         )
-        # With gradient floor, result is small but nonzero (floor * p_max * leaves)
+        # With gradient floor, result is small but nonzero
         assert result > 0  # Floor keeps gradient signal alive
         assert result < 0.1  # But still very small
 
@@ -196,25 +224,40 @@ class TestPhotosynthesis:
             k_light=0.3,
             k_water=0.2,
             k_nutrient=0.2,
+            k_leaf=1.5,
         )
         # With gradient floor, result is small but nonzero
         assert result > 0  # Floor keeps gradient signal alive
         assert result < 0.1  # But still very small
 
-    def test_scales_with_leaves(self) -> None:
-        """More leaves means more photosynthesis."""
-        base_params = dict(
-            light=0.8,
-            water=0.5,
-            nutrients=0.5,
-            p_max=0.5,
-            k_light=0.3,
-            k_water=0.2,
-            k_nutrient=0.2,
-        )
-        p1 = surrogates.photosynthesis(leaves=1.0, **base_params)
-        p2 = surrogates.photosynthesis(leaves=2.0, **base_params)
+    def test_scales_with_leaves_but_saturates(self) -> None:
+        """More leaves means more photosynthesis, but with diminishing returns."""
+        base_params = {
+            "light": 0.8,
+            "water": 0.5,
+            "nutrients": 0.5,
+            "p_max": 0.5,
+            "k_light": 0.3,
+            "k_water": 0.2,
+            "k_nutrient": 0.2,
+            "k_leaf": 1.5,
+        }
+        p1 = surrogates.photosynthesis(leaves=0.5, **base_params)
+        p2 = surrogates.photosynthesis(leaves=1.0, **base_params)
+        p3 = surrogates.photosynthesis(leaves=2.0, **base_params)
+        p4 = surrogates.photosynthesis(leaves=4.0, **base_params)
+
+        # More leaves = more photosynthesis
         assert p2 > p1
+        assert p3 > p2
+        assert p4 > p3
+
+        # But with diminishing returns (due to self-shading)
+        gain_1_to_2 = p2 - p1
+        gain_2_to_3 = p3 - p2
+        gain_3_to_4 = p4 - p3
+        assert gain_2_to_3 < gain_1_to_2  # Diminishing returns
+        assert gain_3_to_4 < gain_2_to_3  # Still diminishing
 
     def test_output_nonnegative(self) -> None:
         """Photosynthesis is never negative."""
@@ -227,8 +270,29 @@ class TestPhotosynthesis:
             k_light=0.3,
             k_water=0.2,
             k_nutrient=0.2,
+            k_leaf=1.5,
         )
         assert result >= 0.0
+
+    def test_bounded_by_p_max(self) -> None:
+        """Photosynthesis approaches p_max at high resources."""
+        result = surrogates.photosynthesis(
+            leaves=10.0,  # High leaves (saturated)
+            light=1.0,  # Max light
+            water=10.0,  # High water
+            nutrients=10.0,  # High nutrients
+            p_max=0.5,
+            k_light=0.3,
+            k_water=0.2,
+            k_nutrient=0.2,
+            k_leaf=1.5,
+        )
+        # Should approach p_max (0.5) but not exceed it
+        # Note: actual max is p_max * leaf_eff * combined_eff
+        # where combined_eff = floor + (1-floor) * product < 1
+        # and leaf_eff = 1 - exp(-k*L) < 1
+        assert result < 0.5 + 1e-6
+        assert result > 0.35  # Should be reasonably high
 
 
 class TestRootUptake:
@@ -295,6 +359,7 @@ class TestMaintenanceCost:
     def test_zero_biomass_zero_cost(self) -> None:
         """No biomass means no maintenance cost."""
         from sim.config import TreeState
+
         state = TreeState(
             energy=jnp.array(1.0),
             water=jnp.array(0.0),
@@ -318,6 +383,7 @@ class TestMaintenanceCost:
     def test_cost_increases_with_biomass(self) -> None:
         """More biomass means higher maintenance cost."""
         from sim.config import TreeState
+
         state1 = TreeState(
             energy=jnp.array(1.0),
             water=jnp.array(0.0),
@@ -349,6 +415,7 @@ class TestMaintenanceCost:
     def test_cost_always_nonnegative(self) -> None:
         """Maintenance cost is never negative."""
         from sim.config import TreeState
+
         state = TreeState(
             energy=jnp.array(1.0),
             water=jnp.array(0.5),
@@ -363,6 +430,49 @@ class TestMaintenanceCost:
             state, m_root=0.01, m_trunk=0.005, m_shoot=0.02, m_leaf=0.03, m_flower=0.04
         )
         assert cost >= 0.0
+
+
+class TestTransportCapacity:
+    """Tests for trunk-based water transport capacity."""
+
+    def test_zero_trunk_near_zero_capacity(self) -> None:
+        """Very small trunk means very small transport capacity."""
+        result = surrogates.transport_capacity(trunk=0.0, kappa=2.0, beta=0.7)
+        # With 1e-8 floor, result is tiny but defined
+        assert result < 1e-5
+
+    def test_more_trunk_more_capacity(self) -> None:
+        """More trunk means more transport capacity."""
+        c1 = surrogates.transport_capacity(trunk=0.5, kappa=2.0, beta=0.7)
+        c2 = surrogates.transport_capacity(trunk=1.0, kappa=2.0, beta=0.7)
+        c3 = surrogates.transport_capacity(trunk=2.0, kappa=2.0, beta=0.7)
+        assert c2 > c1
+        assert c3 > c2
+
+    def test_sublinear_scaling(self) -> None:
+        """With beta < 1, capacity grows sublinearly with trunk."""
+        # Doubling trunk should less than double capacity
+        c1 = surrogates.transport_capacity(trunk=1.0, kappa=2.0, beta=0.7)
+        c2 = surrogates.transport_capacity(trunk=2.0, kappa=2.0, beta=0.7)
+        ratio = c2 / c1
+        # For beta=0.7, ratio should be 2^0.7 ≈ 1.62, not 2.0
+        assert ratio < 2.0
+        assert ratio > 1.5
+
+    def test_kappa_scales_linearly(self) -> None:
+        """Kappa scales capacity linearly."""
+        c1 = surrogates.transport_capacity(trunk=1.0, kappa=1.0, beta=0.7)
+        c2 = surrogates.transport_capacity(trunk=1.0, kappa=2.0, beta=0.7)
+        assert jnp.isclose(c2, 2 * c1, rtol=1e-5)
+
+    def test_output_nonnegative(self) -> None:
+        """Transport capacity is never negative."""
+        trunks = jnp.linspace(0.0, 5.0, 50)
+        for trunk in trunks:
+            result = surrogates.transport_capacity(
+                trunk=float(trunk), kappa=2.0, beta=0.7
+            )
+            assert result >= 0.0
 
 
 class TestSeedProduction:

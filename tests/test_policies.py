@@ -91,12 +91,8 @@ class TestBaselinePolicy:
     def test_wind_response(self) -> None:
         """Policy should respond to high wind conditions."""
         state = make_test_state()
-        low_wind = policies.baseline_policy(
-            state, day=50, num_days=100, wind=0.2
-        )
-        high_wind = policies.baseline_policy(
-            state, day=50, num_days=100, wind=0.8
-        )
+        low_wind = policies.baseline_policy(state, day=50, num_days=100, wind=0.2)
+        high_wind = policies.baseline_policy(state, day=50, num_days=100, wind=0.8)
 
         # High wind should increase trunk allocation for protection
         assert high_wind.trunk >= low_wind.trunk

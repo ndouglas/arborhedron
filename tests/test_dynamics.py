@@ -127,7 +127,9 @@ class TestEnergyConservation:
         """Without leaves, energy only decreases (maintenance)."""
         config = SimConfig()
         state = make_test_state(leaves=0.0, energy=1.0)
-        allocation = make_test_allocation(leaves=0.0, roots=0.25, trunk=0.25, shoots=0.25, flowers=0.25)
+        allocation = make_test_allocation(
+            leaves=0.0, roots=0.25, trunk=0.25, shoots=0.25, flowers=0.25
+        )
 
         new_state = dynamics.step(
             state=state,
@@ -147,11 +149,19 @@ class TestEnergyConservation:
         # Start with good leaves and sufficient trunk (low structural penalty)
         # Use high starting energy to offset costs in first step
         state = make_test_state(
-            leaves=1.0, energy=2.0, roots=0.5, trunk=2.0, shoots=0.2, flowers=0.0,
-            water=0.8, nutrients=0.8,
+            leaves=1.0,
+            energy=2.0,
+            roots=0.5,
+            trunk=2.0,
+            shoots=0.2,
+            flowers=0.0,
+            water=0.8,
+            nutrients=0.8,
         )
         # Zero allocation to test pure photosynthesis vs maintenance
-        allocation = make_test_allocation(roots=0.0, trunk=0.0, shoots=0.0, leaves=0.0, flowers=0.0)
+        allocation = make_test_allocation(
+            roots=0.0, trunk=0.0, shoots=0.0, leaves=0.0, flowers=0.0
+        )
 
         new_state = dynamics.step(
             state=state,
@@ -252,7 +262,9 @@ class TestWindDamage:
         config = SimConfig()
         state = make_test_state(shoots=1.0, leaves=1.0, trunk=1.0)
         # Only allocate to trunk (no new tender growth)
-        allocation = make_test_allocation(roots=0.0, trunk=1.0, shoots=0.0, leaves=0.0, flowers=0.0)
+        allocation = make_test_allocation(
+            roots=0.0, trunk=1.0, shoots=0.0, leaves=0.0, flowers=0.0
+        )
 
         new_state = dynamics.step(
             state=state,
@@ -304,7 +316,9 @@ class TestGrowth:
         state = make_test_state(energy=2.0, water=0.8, nutrients=0.8)
 
         # Allocate everything to roots
-        allocation = make_test_allocation(roots=1.0, trunk=0.0, shoots=0.0, leaves=0.0, flowers=0.0)
+        allocation = make_test_allocation(
+            roots=1.0, trunk=0.0, shoots=0.0, leaves=0.0, flowers=0.0
+        )
 
         new_state = dynamics.step(
             state=state,
@@ -328,7 +342,9 @@ class TestGrowth:
         state_rich = make_test_state(energy=2.0, water=0.9, nutrients=0.9, roots=0.5)
         state_poor = make_test_state(energy=2.0, water=0.1, nutrients=0.1, roots=0.5)
 
-        allocation = make_test_allocation(roots=1.0, trunk=0.0, shoots=0.0, leaves=0.0, flowers=0.0)
+        allocation = make_test_allocation(
+            roots=1.0, trunk=0.0, shoots=0.0, leaves=0.0, flowers=0.0
+        )
 
         new_rich = dynamics.step(
             state=state_rich,

@@ -5,13 +5,21 @@ This module implements the state update for one day of tree growth.
 The update follows this sequence:
 
 1. Root uptake of water and nutrients
-2. Photosynthesis (energy production)
-3. Maintenance costs
-4. Resource allocation and growth
-5. Wind damage
-6. Structural penalty
-7. Resource decay
-8. Clamping to nonnegative values
+2. Transport bottleneck (trunk limits water delivery)
+3. Photosynthesis (energy production with self-shading)
+4. Water/nutrient consumption for photosynthesis
+5. Maintenance costs
+6. Resource allocation and growth
+7. Water/nutrient consumption for growth
+8. Wind damage
+9. Structural penalty
+10. Resource decay
+11. Clamping to nonnegative values
+
+Key stabilization mechanisms:
+- Self-shading (Beer-Lambert): prevents runaway leaf growth
+- Resource consumption: water/nutrients are used during photosynthesis and growth
+- Transport bottleneck: trunk limits water delivery to canopy
 
 All operations are differentiable for gradient-based optimization.
 """
@@ -66,20 +74,36 @@ def step(
     water = water + water_uptake
     nutrients = nutrients + nutrient_uptake
 
-    # 2. Photosynthesis
+    # 2. Transport bottleneck: trunk limits water delivery to canopy
+    # This creates a natural constraint requiring trunk investment
+    transport_cap = surrogates.transport_capacity(
+        trunk=trunk,
+        kappa=config.kappa_transport,
+        beta=config.beta_transport,
+    )
+    # Water available for photosynthesis is limited by transport
+    water_available = jnp.minimum(water, transport_cap)
+
+    # 3. Photosynthesis (uses transport-limited water)
     photo_energy = surrogates.photosynthesis(
         leaves=leaves,
         light=light,
-        water=water,
+        water=water_available,
         nutrients=nutrients,
         p_max=config.p_max,
         k_light=config.k_light,
         k_water=config.k_water,
         k_nutrient=config.k_nutrient,
+        k_leaf=config.k_leaf,
     )
     energy = energy + photo_energy
 
-    # 3. Maintenance costs
+    # 4. Consume water and nutrients for photosynthesis
+    # Photosynthesis requires water (transpiration) and nutrients
+    water = water - config.c_water_photo * photo_energy
+    nutrients = nutrients - config.c_nutrient_photo * photo_energy
+
+    # 5. Maintenance costs
     maintenance = surrogates.maintenance_cost(
         state,
         m_root=config.m_root,
@@ -90,15 +114,14 @@ def step(
     )
     energy = energy - maintenance
 
-    # 4. Resource allocation and growth
-    # Compute available energy for growth (can't invest more than we have)
+    # 6. Resource allocation and growth
+    # Only invest a fraction of energy (the rest is banked)
     available_energy = jnp.maximum(energy, 0.0)
+    energy_to_invest = config.investment_rate * available_energy
 
     # Growth efficiency depends on water and nutrient availability
     # Each compartment has a base efficiency modified by resource availability
-    def compute_growth(
-        alloc_frac: Array, base_eta: float
-    ) -> tuple[Array, Array]:
+    def compute_growth(alloc_frac: Array, base_eta: float) -> tuple[Array, Array]:
         """Compute growth and energy cost for a compartment."""
         efficiency = surrogates.growth_efficiency(
             water=water,
@@ -107,8 +130,8 @@ def step(
             k_water=config.k_water,
             k_nutrient=config.k_nutrient,
         )
-        # Energy invested = fraction of available energy
-        invested = alloc_frac * available_energy
+        # Energy invested = fraction of investment budget (not total energy)
+        invested = alloc_frac * energy_to_invest
         # Biomass gained = invested * efficiency
         growth = invested * efficiency
         return growth, invested
@@ -126,11 +149,19 @@ def step(
     leaves = leaves + leaf_growth
     flowers = flowers + flower_growth
 
-    # Deduct growth costs from energy
-    total_cost = root_cost + trunk_cost + shoot_cost + leaf_cost + flower_cost
-    energy = energy - total_cost
+    # Deduct only the invested energy (not 100%)
+    total_invested = root_cost + trunk_cost + shoot_cost + leaf_cost + flower_cost
+    energy = energy - total_invested
 
-    # 5. Wind damage to tender growth (shoots and leaves)
+    # 7. Consume water and nutrients for growth
+    # Building new biomass requires water and nutrients
+    total_growth = (
+        root_growth + trunk_growth + shoot_growth + leaf_growth + flower_growth
+    )
+    water = water - config.c_water_growth * total_growth
+    nutrients = nutrients - config.c_nutrient_growth * total_growth
+
+    # 8. Wind damage to tender growth (shoots and leaves)
     damage_factor = surrogates.wind_damage(
         jnp.array(wind),
         threshold=config.wind_threshold,
@@ -145,7 +176,7 @@ def step(
     leaf_damage = damage_factor * config.alpha_leaf
     leaves = leaves * (1.0 - leaf_damage)
 
-    # 6. Structural penalty
+    # 9. Structural penalty
     load = surrogates.compute_load(
         leaves=leaves,
         shoots=shoots,
@@ -162,11 +193,11 @@ def step(
     structural_drain = surrogates.structural_penalty(load, capacity)
     energy = energy - config.structural_penalty * structural_drain
 
-    # 7. Resource decay (water and nutrients decay slightly)
+    # 10. Resource decay (water and nutrients decay slightly)
     water = water * (1.0 - config.water_decay)
     nutrients = nutrients * (1.0 - config.nutrient_decay)
 
-    # 8. Clamp all values to nonnegative
+    # 11. Clamp all values to nonnegative
     # Use jnp.maximum which has well-defined gradients
     energy = jnp.maximum(energy, 0.0)
     water = jnp.maximum(water, 0.0)
@@ -187,6 +218,107 @@ def step(
         leaves=leaves,
         flowers=flowers,
     )
+
+
+def diagnose_energy_budget(
+    state: TreeState,
+    allocation: Allocation,
+    light: float,
+    moisture: float,
+    wind: float,
+    config: SimConfig,
+) -> dict[str, float]:
+    """
+    Diagnostic function to inspect energy and resource budget components.
+
+    Returns a dictionary with all flows for debugging.
+    """
+    # Root uptake (for water/nutrients that affect photosynthesis)
+    water_uptake, nutrient_uptake = surrogates.root_uptake(
+        roots=state.roots,
+        moisture=moisture,
+        u_water_max=config.u_water_max,
+        u_nutrient_max=config.u_nutrient_max,
+        k_root=config.k_root,
+    )
+    water = state.water + water_uptake
+    nutrients = state.nutrients + nutrient_uptake
+
+    # Transport bottleneck
+    transport_cap = surrogates.transport_capacity(
+        trunk=state.trunk,
+        kappa=config.kappa_transport,
+        beta=config.beta_transport,
+    )
+    water_available = min(float(water), float(transport_cap))
+
+    # Photosynthesis (with transport-limited water and self-shading)
+    photo_energy = surrogates.photosynthesis(
+        leaves=state.leaves,
+        light=light,
+        water=water_available,
+        nutrients=nutrients,
+        p_max=config.p_max,
+        k_light=config.k_light,
+        k_water=config.k_water,
+        k_nutrient=config.k_nutrient,
+        k_leaf=config.k_leaf,
+    )
+
+    # Water/nutrient consumption for photosynthesis
+    water_consumed_photo = config.c_water_photo * float(photo_energy)
+    nutrient_consumed_photo = config.c_nutrient_photo * float(photo_energy)
+
+    # Maintenance
+    maintenance = surrogates.maintenance_cost(
+        state,
+        m_root=config.m_root,
+        m_trunk=config.m_trunk,
+        m_shoot=config.m_shoot,
+        m_leaf=config.m_leaf,
+        m_flower=config.m_flower,
+    )
+
+    # Investment
+    energy_after_maintenance = state.energy + photo_energy - maintenance
+    available = max(float(energy_after_maintenance), 0.0)
+    investment = config.investment_rate * available
+
+    # Structural penalty
+    load = surrogates.compute_load(
+        leaves=state.leaves,
+        shoots=state.shoots,
+        flowers=state.flowers,
+        c_leaf=config.c_leaf,
+        c_shoot=config.c_shoot,
+        c_flower=config.c_flower,
+    )
+    capacity = surrogates.compute_capacity(
+        trunk=state.trunk,
+        c_trunk=config.c_trunk,
+        gamma=config.gamma,
+    )
+    struct_penalty = float(surrogates.structural_penalty(load, capacity))
+
+    # Self-shading efficiency (for debugging)
+    leaf_eff = float(surrogates.leaf_area_efficiency(state.leaves, config.k_leaf))
+
+    return {
+        "photosynthesis": float(photo_energy),
+        "maintenance": float(maintenance),
+        "investment": float(investment),
+        "structural_penalty": float(struct_penalty) * config.structural_penalty,
+        "energy_before": float(state.energy),
+        "net_energy_flow": float(photo_energy) - float(maintenance) - float(investment),
+        "water_uptake": float(water_uptake),
+        "water_available": water_available,
+        "transport_capacity": float(transport_cap),
+        "water_consumed_photo": water_consumed_photo,
+        "nutrient_consumed_photo": nutrient_consumed_photo,
+        "leaf_efficiency": leaf_eff,
+        "structural_load": float(load),
+        "structural_capacity": float(capacity),
+    }
 
 
 def compute_seeds(state: TreeState, config: SimConfig) -> Array:

@@ -78,12 +78,14 @@ class TestEnvironmentState:
         mild = ClimateConfig.mild()
         droughty = ClimateConfig.droughty()
 
-        mild_moisture = sum(
-            stress.compute_environment(mild, t=float(t))[1] for t in range(100)
-        ) / 100
-        droughty_moisture = sum(
-            stress.compute_environment(droughty, t=float(t))[1] for t in range(100)
-        ) / 100
+        mild_moisture = (
+            sum(stress.compute_environment(mild, t=float(t))[1] for t in range(100))
+            / 100
+        )
+        droughty_moisture = (
+            sum(stress.compute_environment(droughty, t=float(t))[1] for t in range(100))
+            / 100
+        )
 
         assert droughty_moisture < mild_moisture
 
@@ -92,12 +94,14 @@ class TestEnvironmentState:
         mild = ClimateConfig.mild()
         windy = ClimateConfig.windy()
 
-        mild_wind = sum(
-            stress.compute_environment(mild, t=float(t))[2] for t in range(100)
-        ) / 100
-        windy_wind = sum(
-            stress.compute_environment(windy, t=float(t))[2] for t in range(100)
-        ) / 100
+        mild_wind = (
+            sum(stress.compute_environment(mild, t=float(t))[2] for t in range(100))
+            / 100
+        )
+        windy_wind = (
+            sum(stress.compute_environment(windy, t=float(t))[2] for t in range(100))
+            / 100
+        )
 
         assert windy_wind > mild_wind
 
@@ -108,9 +112,7 @@ class TestEnvironmentBatch:
     def test_batch_returns_arrays(self) -> None:
         """Batch computation returns JAX arrays."""
         config = ClimateConfig.mild()
-        light, moisture, wind = stress.compute_environment_batch(
-            config, num_days=10
-        )
+        light, moisture, wind = stress.compute_environment_batch(config, num_days=10)
         assert light.shape == (10,)
         assert moisture.shape == (10,)
         assert wind.shape == (10,)

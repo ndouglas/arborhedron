@@ -28,13 +28,13 @@ def compute_signal(params: StressParams, t: float) -> Array:
     Returns:
         Signal value in [0, 1]
     """
-    raw = params.offset + params.amplitude * jnp.sin(params.frequency * t + params.phase)
+    raw = params.offset + params.amplitude * jnp.sin(
+        params.frequency * t + params.phase
+    )
     return jnp.clip(raw, 0.0, 1.0)
 
 
-def compute_environment(
-    config: ClimateConfig, t: float
-) -> tuple[Array, Array, Array]:
+def compute_environment(config: ClimateConfig, t: float) -> tuple[Array, Array, Array]:
     """
     Compute all environmental stress values at time t.
 
@@ -111,16 +111,12 @@ def random_climate(key: Array, base: ClimateConfig | None = None) -> ClimateConf
     # Split keys for each parameter
     keys = jr.split(key, 9)
 
-    def perturb_params(params: StressParams, k1: Array, k2: Array, k3: Array) -> StressParams:
+    def perturb_params(
+        params: StressParams, k1: Array, k2: Array, k3: Array
+    ) -> StressParams:
         """Perturb stress parameters within reasonable bounds."""
-        offset = jnp.clip(
-            params.offset + 0.2 * (jr.uniform(k1) - 0.5),
-            0.1, 0.9
-        )
-        amplitude = jnp.clip(
-            params.amplitude + 0.1 * (jr.uniform(k2) - 0.5),
-            0.05, 0.4
-        )
+        offset = jnp.clip(params.offset + 0.2 * (jr.uniform(k1) - 0.5), 0.1, 0.9)
+        amplitude = jnp.clip(params.amplitude + 0.1 * (jr.uniform(k2) - 0.5), 0.05, 0.4)
         phase = params.phase + jnp.pi * (jr.uniform(k3) - 0.5)
         return StressParams(
             offset=float(offset),
