@@ -138,7 +138,10 @@ class TestStructuralPenalty:
         """Penalty transitions smoothly near equilibrium."""
         loads = jnp.linspace(0.5, 1.5, 20)
         penalties = jnp.array(
-            [surrogates.structural_penalty(load=float(load_val), capacity=1.0) for load_val in loads]
+            [
+                surrogates.structural_penalty(load=float(load_val), capacity=1.0)
+                for load_val in loads
+            ]
         )
         # Check monotonically increasing
         diffs = jnp.diff(penalties)
@@ -703,3 +706,189 @@ class TestWaterStress:
             )
             assert float(result) >= 0.0
             assert float(result) <= 1.0
+
+
+class TestMaturityGate:
+    """Tests for phenology maturity gate (trunk + leaves requirement)."""
+
+    def test_both_below_threshold_gate_closed(self) -> None:
+        """With both trunk and leaves below threshold, gate is nearly closed."""
+        result = surrogates.maturity_gate(
+            trunk=0.05,
+            leaves=0.1,
+            trunk_threshold=0.2,
+            leaves_threshold=0.3,
+            steepness=10.0,
+        )
+        assert float(result) < 0.1  # Gate nearly closed
+
+    def test_trunk_only_gate_closed(self) -> None:
+        """With only trunk above threshold, gate still closed (need both)."""
+        result = surrogates.maturity_gate(
+            trunk=0.5,  # Above threshold
+            leaves=0.1,  # Below threshold
+            trunk_threshold=0.2,
+            leaves_threshold=0.3,
+            steepness=10.0,
+        )
+        assert float(result) < 0.2  # Gate mostly closed
+
+    def test_leaves_only_gate_closed(self) -> None:
+        """With only leaves above threshold, gate still closed (need both)."""
+        result = surrogates.maturity_gate(
+            trunk=0.05,  # Below threshold
+            leaves=0.5,  # Above threshold
+            trunk_threshold=0.2,
+            leaves_threshold=0.3,
+            steepness=10.0,
+        )
+        assert float(result) < 0.2  # Gate mostly closed
+
+    def test_both_above_threshold_gate_open(self) -> None:
+        """With both trunk and leaves above threshold, gate is open."""
+        result = surrogates.maturity_gate(
+            trunk=0.5,  # Above threshold
+            leaves=0.6,  # Above threshold
+            trunk_threshold=0.2,
+            leaves_threshold=0.3,
+            steepness=10.0,
+        )
+        assert float(result) > 0.8  # Gate open
+
+    def test_output_bounded(self) -> None:
+        """Gate is always in [0, 1]."""
+        for trunk in [0.0, 0.2, 0.5, 1.0]:
+            for leaves in [0.0, 0.3, 0.6, 1.0]:
+                result = surrogates.maturity_gate(
+                    trunk=trunk,
+                    leaves=leaves,
+                    trunk_threshold=0.2,
+                    leaves_threshold=0.3,
+                    steepness=10.0,
+                )
+                assert float(result) >= 0.0
+                assert float(result) <= 1.0
+
+
+class TestFlowerWindDamage:
+    """Tests for flower-specific wind damage with trunk protection."""
+
+    def test_low_wind_no_damage(self) -> None:
+        """Below wind threshold, flowers are safe."""
+        result = surrogates.flower_wind_damage(
+            wind=0.2,
+            trunk=0.0,
+            threshold=0.5,
+            steepness=8.0,
+            max_damage=0.5,
+            alpha_flower=0.7,
+            k_protection=2.0,
+            max_protection=0.9,
+        )
+        assert float(result) < 0.1  # Minimal damage
+
+    def test_high_wind_no_trunk_severe_damage(self) -> None:
+        """High wind with no trunk causes severe flower damage."""
+        result = surrogates.flower_wind_damage(
+            wind=0.8,
+            trunk=0.0,
+            threshold=0.5,
+            steepness=8.0,
+            max_damage=0.5,
+            alpha_flower=0.7,
+            k_protection=2.0,
+            max_protection=0.9,
+        )
+        # With no trunk: damage ≈ 0.7 * 0.5 * sigmoid(2.4) ≈ 0.7 * 0.5 * 0.92 ≈ 0.32
+        assert float(result) > 0.25  # Significant damage
+
+    def test_high_wind_with_trunk_protected(self) -> None:
+        """High wind with trunk provides substantial protection to flowers."""
+        damage_no_trunk = surrogates.flower_wind_damage(
+            wind=0.8,
+            trunk=0.0,
+            threshold=0.5,
+            steepness=8.0,
+            max_damage=0.5,
+            alpha_flower=0.7,
+            k_protection=2.0,
+            max_protection=0.9,
+        )
+        damage_with_trunk = surrogates.flower_wind_damage(
+            wind=0.8,
+            trunk=1.0,
+            threshold=0.5,
+            steepness=8.0,
+            max_damage=0.5,
+            alpha_flower=0.7,
+            k_protection=2.0,
+            max_protection=0.9,
+        )
+        # Trunk should provide substantial protection (90% max with k=2.0)
+        assert float(damage_with_trunk) < float(damage_no_trunk) * 0.3
+        # With trunk=1.0, k=2.0: protection ≈ 0.9 * (1 - exp(-2)) ≈ 0.78
+        # So damage reduced by ~78%
+
+    def test_flower_more_vulnerable_than_leaves(self) -> None:
+        """Flowers have higher alpha than leaves (more vulnerable base)."""
+        # Compare with effective_wind_damage for leaves
+        flower_damage = surrogates.flower_wind_damage(
+            wind=0.7,
+            trunk=0.0,  # No protection
+            threshold=0.5,
+            alpha_flower=0.7,  # High vulnerability
+        )
+        leaf_damage_base = surrogates.effective_wind_damage(
+            wind=0.7,
+            trunk=0.0,
+            threshold=0.5,
+        )
+        # alpha_leaf (0.2) < alpha_flower (0.7)
+        # So flower damage should be higher than leaf damage
+        assert float(flower_damage) > float(leaf_damage_base) * 0.2  # leaf alpha
+
+    def test_trunk_protection_stronger_for_flowers(self) -> None:
+        """Trunk protection is stronger for flowers (higher k, higher max)."""
+        # Flower protection at trunk=0.5
+        flower_damage_protected = surrogates.flower_wind_damage(
+            wind=0.7,
+            trunk=0.5,
+            k_protection=2.0,  # Higher k
+            max_protection=0.9,  # Higher max
+        )
+        flower_damage_unprotected = surrogates.flower_wind_damage(
+            wind=0.7,
+            trunk=0.0,
+        )
+
+        # General protection at trunk=0.5
+        general_damage_protected = surrogates.effective_wind_damage(
+            wind=0.7,
+            trunk=0.5,
+            k_protection=1.0,  # Lower k
+            max_protection=0.7,  # Lower max
+        )
+        general_damage_unprotected = surrogates.effective_wind_damage(
+            wind=0.7,
+            trunk=0.0,
+        )
+
+        # Flower protection ratio should be better
+        flower_ratio = float(flower_damage_protected) / float(flower_damage_unprotected)
+        general_ratio = float(general_damage_protected) / float(
+            general_damage_unprotected
+        )
+        # Flower protection more effective (lower ratio means more protection)
+        assert flower_ratio < general_ratio
+
+    def test_output_bounded(self) -> None:
+        """Flower damage is always in reasonable bounds."""
+        for wind in [0.0, 0.5, 1.0]:
+            for trunk in [0.0, 0.5, 1.0]:
+                result = surrogates.flower_wind_damage(
+                    wind=wind,
+                    trunk=trunk,
+                )
+                assert float(result) >= 0.0
+                # Max possible: alpha_flower * max_damage = 0.7 * 0.5 = 0.35
+                assert float(result) <= 0.7 * 0.5 + 0.01

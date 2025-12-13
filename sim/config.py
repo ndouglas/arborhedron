@@ -203,8 +203,12 @@ class SimConfig:
     # Simulation parameters
     num_days: int = 100
     seed_energy: float = 1.0
-    investment_rate: float = 0.3  # Maximum fraction of energy to invest in growth each day
-    investment_energy_threshold: float = 0.3  # Energy level where investment rate is 50%
+    investment_rate: float = (
+        0.3  # Maximum fraction of energy to invest in growth each day
+    )
+    investment_energy_threshold: float = (
+        0.3  # Energy level where investment rate is 50%
+    )
     investment_steepness: float = 5.0  # How sharply investment gates at low energy
 
     # Photosynthesis parameters
@@ -280,6 +284,7 @@ class SimConfig:
     wind_steepness: float = 8.0
     alpha_shoot: float = 0.3  # Shoot damage coefficient
     alpha_leaf: float = 0.2  # Leaf damage coefficient
+    alpha_flower: float = 0.7  # Flower damage coefficient (flowers are tender!)
     max_wind_damage: float = 0.5  # Maximum base damage per day (before protection)
 
     # Wood protection against wind
@@ -287,6 +292,12 @@ class SimConfig:
     # protection = max_protection * (1 - exp(-k_protection * trunk))
     k_wind_protection: float = 1.0  # How quickly trunk provides protection
     max_wind_protection: float = 0.7  # Maximum protection (70% damage reduction)
+
+    # Flower-specific wind protection (trunk shields irreversible investment)
+    # Flowers get MUCH more protection from trunk than leaves/shoots
+    # This creates the "oak vs reeds" bifurcation: invest in trunk → protect flowers
+    k_flower_protection: float = 2.0  # Faster saturation (trunk helps flowers more)
+    max_flower_protection: float = 0.9  # Up to 90% damage reduction for flowers
 
     # Transpiration parameters (water loss from leaves)
     # Transpiration = transp_rate * leaves * light
@@ -310,6 +321,8 @@ class SimConfig:
     # Flowering and seed production
     flowering_maturity: float = 0.4  # Season progress (0-1) before flowers can grow
     flowering_trunk_threshold: float = 0.2  # Minimum trunk to support flowers
+    flowering_leaves_threshold: float = 0.3  # Minimum leaves to support flowers
+    flowering_gate_steepness: float = 10.0  # How sharply phenology gates kick in
     seed_energy_threshold: float = 0.5  # Minimum energy to produce seeds
     seed_conversion: float = 10.0  # Seeds per unit flower biomass
 

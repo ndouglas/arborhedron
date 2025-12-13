@@ -610,6 +610,82 @@ def drought_damage(
     return max_damage * raw_stress
 
 
+def maturity_gate(
+    trunk: Scalar,
+    leaves: Scalar,
+    trunk_threshold: float,
+    leaves_threshold: float,
+    steepness: float = 10.0,
+) -> Array:
+    """
+    Phenology gate: flowering requires both structural maturity AND leaf biomass.
+
+    g = σ(k(T - T_0)) · σ(k(L - L_0))
+
+    This prevents "flower early" exploits where the policy dumps energy into
+    flowers before building infrastructure. Both gates must be satisfied:
+    - Trunk gate: need structural support for flowers/fruit
+    - Leaves gate: need photosynthetic capacity to sustain flowering
+
+    The multiplicative form means BOTH conditions must be met.
+
+    Args:
+        trunk: Trunk biomass
+        leaves: Leaf biomass
+        trunk_threshold: Minimum trunk to support flowers
+        leaves_threshold: Minimum leaves to support flowers
+        steepness: How sharply gates transition (recommend 8-15)
+
+    Returns:
+        Gate factor in [0, 1], ~0 if either threshold not met
+    """
+    trunk_gate = sigmoid(steepness * (jnp.array(trunk) - trunk_threshold))
+    leaves_gate = sigmoid(steepness * (jnp.array(leaves) - leaves_threshold))
+    return trunk_gate * leaves_gate
+
+
+def flower_wind_damage(
+    wind: Scalar,
+    trunk: Scalar,
+    threshold: float = 0.5,
+    steepness: float = 8.0,
+    max_damage: float = 0.5,
+    alpha_flower: float = 0.7,
+    k_protection: float = 2.0,
+    max_protection: float = 0.9,
+) -> Array:
+    """
+    Compute wind damage to flowers with trunk protection.
+
+    Flowers are tender and suffer high base damage from wind, BUT trunk
+    provides strong protection. This creates the "oak vs reeds" bifurcation:
+
+    - Low trunk: flowers get destroyed by wind → "reeds" strategy
+    - High trunk: flowers protected → "oak" strategy worth it
+
+    d_F = α_F · base_damage · (1 - protection_F(T))
+
+    where protection_F uses higher k and max than leaf/shoot protection,
+    making trunk investment much more valuable for flower preservation.
+
+    Args:
+        wind: Wind speed [0, 1]
+        trunk: Trunk biomass
+        threshold: Wind threshold for damage onset
+        steepness: Sigmoid steepness for base damage
+        max_damage: Maximum base damage per timestep
+        alpha_flower: Flower vulnerability coefficient (flowers are tender)
+        k_protection: How quickly trunk protects flowers (faster than leaves)
+        max_protection: Maximum protection for flowers (higher than leaves)
+
+    Returns:
+        Flower damage factor
+    """
+    base_damage = wind_damage(jnp.array(wind), threshold, steepness, max_damage)
+    protection = wood_protection(trunk, k_protection, max_protection)
+    return alpha_flower * base_damage * (1.0 - protection)
+
+
 def growth_efficiency(
     water: Scalar,
     nutrients: Scalar,

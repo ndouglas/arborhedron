@@ -18,6 +18,7 @@ class TestSelfShadingAblation:
 
     def test_without_self_shading_gradient_constant(self) -> None:
         """Without self-shading, leaf gradient doesn't diminish - runaway growth."""
+
         # Direct leaf -> photosynthesis gradient without Beer-Lambert
         def photo_no_shading(leaves: float) -> float:
             """Linear leaf contribution (no self-shading)."""
@@ -103,7 +104,9 @@ class TestTransportBottleneckAblation:
 
         def photo_rate_with_trunk(trunk):
             """Photosynthesis rate depends on trunk via transport capacity."""
-            transport_cap = surrogates.transport_capacity(trunk=trunk, kappa=2.0, beta=0.7)
+            transport_cap = surrogates.transport_capacity(
+                trunk=trunk, kappa=2.0, beta=0.7
+            )
             water_available = jnp.minimum(1.0, transport_cap)  # Water store = 1.0
             return surrogates.photosynthesis(
                 leaves=2.0,
@@ -152,7 +155,9 @@ class TestResourceConsumptionAblation:
                 leaves=jnp.array(0.3),
                 flowers=jnp.array(0.1),
             )
-            state = step(state, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=day)
+            state = step(
+                state, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=day
+            )
             energy_history.append(float(state.energy))
 
         # With resource consumption, energy should stabilize (not grow forever)
@@ -170,11 +175,23 @@ class TestInvestmentGatingAblation:
 
         # High energy state
         high_energy = 2.0
-        high_gate = 1 / (1 + jnp.exp(-config.investment_steepness * (high_energy - config.investment_energy_threshold)))
+        high_gate = 1 / (
+            1
+            + jnp.exp(
+                -config.investment_steepness
+                * (high_energy - config.investment_energy_threshold)
+            )
+        )
 
         # Low energy state
         low_energy = 0.1
-        low_gate = 1 / (1 + jnp.exp(-config.investment_steepness * (low_energy - config.investment_energy_threshold)))
+        low_gate = 1 / (
+            1
+            + jnp.exp(
+                -config.investment_steepness
+                * (low_energy - config.investment_energy_threshold)
+            )
+        )
 
         # Low energy should gate investment
         assert float(low_gate) < 0.3
@@ -195,7 +212,9 @@ class TestInvestmentGatingAblation:
         )
 
         # Config with high investment rate (simulating no gating)
-        config = SimConfig(investment_rate=0.9, investment_steepness=0.1)  # Nearly always invest
+        config = SimConfig(
+            investment_rate=0.9, investment_steepness=0.1
+        )  # Nearly always invest
 
         # The tree should survive (gating prevents death)
         # Even with aggressive investment, gating at low energy helps
@@ -209,7 +228,9 @@ class TestInvestmentGatingAblation:
 
         # Run a few steps with low energy
         for day in range(10):
-            state = step(state, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=day)
+            state = step(
+                state, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=day
+            )
 
         # Should still be alive (energy >= 0 due to clamping)
         assert float(state.energy) >= 0
@@ -228,7 +249,9 @@ class TestFlowerMaturityGatingAblation:
         assert progress < config.flowering_maturity
 
         # Maturity gate should be near 0
-        maturity_gate = 1 / (1 + jnp.exp(-10.0 * (progress - config.flowering_maturity)))
+        maturity_gate = 1 / (
+            1 + jnp.exp(-10.0 * (progress - config.flowering_maturity))
+        )
         assert float(maturity_gate) < 0.1  # Gate blocks early flowering
 
     def test_late_flower_allocation_allowed(self) -> None:
@@ -241,7 +264,9 @@ class TestFlowerMaturityGatingAblation:
         assert progress > config.flowering_maturity
 
         # Maturity gate should be near 1
-        maturity_gate = 1 / (1 + jnp.exp(-10.0 * (progress - config.flowering_maturity)))
+        maturity_gate = 1 / (
+            1 + jnp.exp(-10.0 * (progress - config.flowering_maturity))
+        )
         assert float(maturity_gate) > 0.9  # Gate allows late flowering
 
 
@@ -458,10 +483,22 @@ class TestStomatalClosureAblation:
 
         # Step both states forward
         new_state_normal = step(
-            state_normal, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50
+            state_normal,
+            alloc,
+            light=0.7,
+            moisture=0.6,
+            wind=0.1,
+            config=config,
+            day=50,
         )
         new_state_drought = step(
-            state_drought, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50
+            state_drought,
+            alloc,
+            light=0.7,
+            moisture=0.6,
+            wind=0.1,
+            config=config,
+            day=50,
         )
 
         # The drought state should gain less energy due to stomatal closure
@@ -488,7 +525,9 @@ class TestStomatalClosureAblation:
 
         # Gradient should exist at low water (where stomata respond)
         grad_low = float(grad_fn(0.15))
-        assert grad_low > 0  # Gradient exists and is positive (more water = more conductance)
+        assert (
+            grad_low > 0
+        )  # Gradient exists and is positive (more water = more conductance)
 
 
 class TestDroughtLeafSenescenceAblation:
@@ -553,10 +592,8 @@ class TestDroughtLeafSenescenceAblation:
             flowers=jnp.array(0.1),
         )
 
-        # Step forward
-        new_state = step(
-            state, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50
-        )
+        # Step forward (we just verify drought_damage is low, not checking state)
+        _ = step(state, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50)
 
         # With adequate water, leaves should grow (or at least not suffer drought damage)
         drought_damage = surrogates.drought_damage(
@@ -610,10 +647,22 @@ class TestTranspirationAblation:
 
         # Step both forward
         new_few = step(
-            state_few_leaves, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50
+            state_few_leaves,
+            alloc,
+            light=0.7,
+            moisture=0.6,
+            wind=0.1,
+            config=config,
+            day=50,
         )
         new_many = step(
-            state_many_leaves, alloc, light=0.7, moisture=0.6, wind=0.1, config=config, day=50
+            state_many_leaves,
+            alloc,
+            light=0.7,
+            moisture=0.6,
+            wind=0.1,
+            config=config,
+            day=50,
         )
 
         # More leaves = more transpiration = less water remaining
@@ -661,3 +710,262 @@ class TestTranspirationAblation:
         # High light = more transpiration = less water
         # (Note: high light also = more photosynthesis = more energy)
         assert float(new_high_light.water) < float(new_low_light.water)
+
+
+class TestPhenologyLeavesGateAblation:
+    """Tests proving flowering requires leaves (not just trunk)."""
+
+    def test_no_leaves_no_flowering(self) -> None:
+        """Without sufficient leaves, flower allocation is wasted."""
+        config = SimConfig()
+
+        # State with trunk but no leaves (weird, but tests the mechanic)
+        state_no_leaves = TreeState(
+            energy=jnp.array(2.0),
+            water=jnp.array(0.5),
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.5),  # Above threshold
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(0.1),  # Below threshold (0.3)
+            flowers=jnp.array(0.0),
+        )
+
+        # State with both trunk and leaves
+        state_with_leaves = TreeState(
+            energy=jnp.array(2.0),
+            water=jnp.array(0.5),
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.5),  # Above threshold
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(0.6),  # Above threshold
+            flowers=jnp.array(0.0),
+        )
+
+        # Flower-heavy allocation
+        alloc = Allocation(
+            roots=jnp.array(0.1),
+            trunk=jnp.array(0.1),
+            shoots=jnp.array(0.1),
+            leaves=jnp.array(0.1),
+            flowers=jnp.array(0.6),  # Most allocation to flowers
+        )
+
+        # Day 60 = 60% progress, past maturity (0.4)
+        new_no_leaves = step(
+            state_no_leaves,
+            alloc,
+            light=0.7,
+            moisture=0.6,
+            wind=0.1,
+            config=config,
+            day=60,
+        )
+        new_with_leaves = step(
+            state_with_leaves,
+            alloc,
+            light=0.7,
+            moisture=0.6,
+            wind=0.1,
+            config=config,
+            day=60,
+        )
+
+        # Without leaves, flower growth should be blocked
+        # With leaves, flower growth should proceed
+        assert float(new_with_leaves.flowers) > float(new_no_leaves.flowers) * 2
+
+    def test_maturity_gate_requires_both(self) -> None:
+        """Maturity gate is multiplicative - need BOTH trunk and leaves."""
+        from sim import surrogates
+
+        config = SimConfig()
+
+        # Only trunk
+        gate_trunk_only = surrogates.maturity_gate(
+            trunk=0.5,
+            leaves=0.1,
+            trunk_threshold=config.flowering_trunk_threshold,
+            leaves_threshold=config.flowering_leaves_threshold,
+            steepness=config.flowering_gate_steepness,
+        )
+
+        # Only leaves
+        gate_leaves_only = surrogates.maturity_gate(
+            trunk=0.1,
+            leaves=0.5,
+            trunk_threshold=config.flowering_trunk_threshold,
+            leaves_threshold=config.flowering_leaves_threshold,
+            steepness=config.flowering_gate_steepness,
+        )
+
+        # Both
+        gate_both = surrogates.maturity_gate(
+            trunk=0.5,
+            leaves=0.5,
+            trunk_threshold=config.flowering_trunk_threshold,
+            leaves_threshold=config.flowering_leaves_threshold,
+            steepness=config.flowering_gate_steepness,
+        )
+
+        # Both gates are mostly closed without both requirements
+        assert float(gate_trunk_only) < 0.3
+        assert float(gate_leaves_only) < 0.3
+        # With both, gate is open
+        assert float(gate_both) > 0.8
+
+
+class TestFlowerWindDamageAblation:
+    """Tests proving trunk protects flowers from wind damage."""
+
+    def test_wind_damages_flowers_without_trunk(self) -> None:
+        """Flowers are destroyed by wind without trunk protection."""
+        config = SimConfig()
+
+        # State with flowers but minimal trunk
+        state = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.5),
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.05),  # Almost no trunk
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(0.5),
+            flowers=jnp.array(1.0),  # Has flowers
+        )
+
+        alloc = Allocation(
+            roots=jnp.array(0.2),
+            trunk=jnp.array(0.2),
+            shoots=jnp.array(0.2),
+            leaves=jnp.array(0.3),
+            flowers=jnp.array(0.1),
+        )
+
+        # High wind, day 70 (past maturity)
+        new_state = step(
+            state, alloc, light=0.7, moisture=0.6, wind=0.8, config=config, day=70
+        )
+
+        # Flowers should take significant damage
+        # alpha_flower = 0.7, high wind, no protection
+        flower_loss = float(state.flowers - new_state.flowers) / float(state.flowers)
+        assert flower_loss > 0.15  # Lost at least 15% of flowers
+
+    def test_trunk_protects_flowers_from_wind(self) -> None:
+        """Trunk provides substantial protection for flowers."""
+        config = SimConfig()
+
+        # State with flowers and good trunk
+        state_protected = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.5),
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(1.0),  # Substantial trunk
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(0.5),
+            flowers=jnp.array(1.0),
+        )
+
+        # State with flowers but no trunk
+        state_unprotected = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.5),
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.05),
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(0.5),
+            flowers=jnp.array(1.0),
+        )
+
+        alloc = Allocation(
+            roots=jnp.array(0.2),
+            trunk=jnp.array(0.2),
+            shoots=jnp.array(0.2),
+            leaves=jnp.array(0.3),
+            flowers=jnp.array(0.1),
+        )
+
+        # High wind
+        new_protected = step(
+            state_protected,
+            alloc,
+            light=0.7,
+            moisture=0.6,
+            wind=0.8,
+            config=config,
+            day=70,
+        )
+        new_unprotected = step(
+            state_unprotected,
+            alloc,
+            light=0.7,
+            moisture=0.6,
+            wind=0.8,
+            config=config,
+            day=70,
+        )
+
+        # Protected flowers should survive much better
+        survival_protected = float(new_protected.flowers) / float(
+            state_protected.flowers
+        )
+        survival_unprotected = float(new_unprotected.flowers) / float(
+            state_unprotected.flowers
+        )
+
+        # Trunk should meaningfully improve survival rate
+        # With trunk=1.0 and k=2.0, protection ≈ 0.9 * (1 - exp(-2)) ≈ 0.78
+        # So protected damage ≈ (1 - 0.78) = 0.22 of unprotected damage
+        # survival_protected / survival_unprotected should be > 1.2
+        assert survival_protected > survival_unprotected * 1.2
+
+    def test_flower_protection_stronger_than_leaf(self) -> None:
+        """Flowers get more protection from trunk than leaves do."""
+        config = SimConfig()
+
+        # State with trunk, leaves and flowers
+        state = TreeState(
+            energy=jnp.array(1.0),
+            water=jnp.array(0.5),
+            nutrients=jnp.array(0.5),
+            roots=jnp.array(0.5),
+            trunk=jnp.array(0.5),  # Moderate trunk
+            shoots=jnp.array(0.3),
+            leaves=jnp.array(1.0),
+            flowers=jnp.array(1.0),
+        )
+
+        alloc = Allocation(
+            roots=jnp.array(0.2),
+            trunk=jnp.array(0.2),
+            shoots=jnp.array(0.2),
+            leaves=jnp.array(0.3),
+            flowers=jnp.array(0.1),
+        )
+
+        # High wind (step not needed, we're just comparing protection surrogates)
+        _ = step(state, alloc, light=0.7, moisture=0.6, wind=0.8, config=config, day=70)
+
+        # Compute effective damage reduction for each
+        from sim import surrogates
+
+        # Leaf protection at trunk=0.5 with standard parameters
+        leaf_protection = surrogates.wood_protection(
+            trunk=0.5,
+            k_protection=config.k_wind_protection,
+            max_protection=config.max_wind_protection,
+        )
+
+        # Flower protection at trunk=0.5 with enhanced parameters
+        flower_protection = surrogates.wood_protection(
+            trunk=0.5,
+            k_protection=config.k_flower_protection,
+            max_protection=config.max_flower_protection,
+        )
+
+        # Flower protection should be higher (k_flower=2.0 > k_wind=1.0)
+        assert float(flower_protection) > float(leaf_protection)

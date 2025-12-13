@@ -146,7 +146,8 @@ def step(
     # At low energy, reduce investment to conserve reserves
     available_energy = jnp.maximum(energy, 0.0)
     investment_gate = jax_sigmoid(
-        config.investment_steepness * (available_energy - config.investment_energy_threshold)
+        config.investment_steepness
+        * (available_energy - config.investment_energy_threshold)
     )
     effective_investment_rate = config.investment_rate * investment_gate
     energy_to_invest = effective_investment_rate * available_energy
@@ -168,16 +169,24 @@ def step(
         growth = invested * efficiency
         return growth, invested
 
-    # Flower gating: prevent flowering before maturity or without trunk support
+    # Flower gating: prevent flowering before maturity, without trunk, or without leaves
     # This prevents "suicide flowering" exploits where policy dumps all energy into flowers early
+    # Uses three gates that must ALL be satisfied:
+    # 1. Maturity (season progress): can't flower too early
+    # 2. Trunk threshold: need structural support
+    # 3. Leaves threshold: need photosynthetic capacity (can't flower without leaves)
     progress = day / config.num_days
     maturity_gate = jax_sigmoid(
-        10.0 * (progress - config.flowering_maturity)  # Sharp transition at maturity
+        config.flowering_gate_steepness * (progress - config.flowering_maturity)
     )
-    trunk_gate = jax_sigmoid(
-        10.0 * (trunk - config.flowering_trunk_threshold)  # Sharp transition at trunk threshold
+    biomass_gate = surrogates.maturity_gate(
+        trunk=trunk,
+        leaves=leaves,
+        trunk_threshold=config.flowering_trunk_threshold,
+        leaves_threshold=config.flowering_leaves_threshold,
+        steepness=config.flowering_gate_steepness,
     )
-    flower_gate = maturity_gate * trunk_gate
+    flower_gate = maturity_gate * biomass_gate
 
     # Gated flower allocation - any blocked flower energy goes nowhere (wasted)
     # This creates a strong incentive to NOT allocate to flowers until ready
@@ -230,7 +239,24 @@ def step(
     leaf_damage = effective_damage * config.alpha_leaf
     leaves = leaves * (1.0 - leaf_damage)
 
-    # 8b. Drought leaf senescence: when water is critically low, leaves die back
+    # 8c. Flower wind damage with enhanced trunk protection
+    # Flowers are tender (high alpha) but get MUCH more protection from trunk
+    # This creates the "oak vs reeds" bifurcation:
+    # - Without trunk: flowers get destroyed → no point in flowering under wind
+    # - With trunk: flowers protected → trunk investment enables reproduction
+    flower_wind_dmg = surrogates.flower_wind_damage(
+        wind=wind,
+        trunk=trunk,
+        threshold=config.wind_threshold,
+        steepness=config.wind_steepness,
+        max_damage=config.max_wind_damage,
+        alpha_flower=config.alpha_flower,
+        k_protection=config.k_flower_protection,
+        max_protection=config.max_flower_protection,
+    )
+    flowers = flowers * (1.0 - flower_wind_dmg)
+
+    # 8d. Drought leaf senescence: when water is critically low, leaves die back
     # This is the "nuclear option" - the tree sacrifices leaves to survive drought
     drought_leaf_damage = surrogates.drought_damage(
         water=water,
