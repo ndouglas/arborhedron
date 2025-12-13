@@ -25,6 +25,7 @@ from sim.skeleton import (
     SkeletonState,
     compute_segment_positions_2d,
     get_tip_indices,
+    get_parent,
 )
 
 
@@ -139,6 +140,177 @@ def compute_canopy_hull(
     padded = centroid + (tip_points - centroid) * (1 + padding)
 
     return padded
+
+
+# =============================================================================
+# MICRO-SHOOTS (connecting leaves to skeleton)
+# =============================================================================
+
+
+def get_branch_segments(skeleton: SkeletonState) -> list[tuple]:
+    """
+    Get list of branch segments as (start_x, start_y, end_x, end_y, idx) tuples.
+
+    Only includes alive segments with visible length.
+    """
+    x, y, _ = compute_segment_positions_2d(skeleton)
+    x, y = np.array(x), np.array(y)
+
+    segments = []
+    for idx in range(skeleton.num_segments):
+        alive = float(skeleton.alive[idx])
+        if alive < 0.1:
+            continue
+
+        if idx == 0:
+            start_x, start_y = 0.0, 0.0
+        else:
+            parent = get_parent(idx)
+            start_x, start_y = x[parent], y[parent]
+
+        end_x, end_y = x[idx], y[idx]
+
+        # Skip tiny segments
+        seg_len = np.sqrt((end_x - start_x)**2 + (end_y - start_y)**2)
+        if seg_len < 0.01:
+            continue
+
+        segments.append((start_x, start_y, end_x, end_y, idx))
+
+    return segments
+
+
+def closest_point_on_segment(px: float, py: float,
+                              x1: float, y1: float,
+                              x2: float, y2: float) -> tuple[float, float]:
+    """
+    Find closest point on line segment (x1,y1)-(x2,y2) to point (px,py).
+    """
+    dx = x2 - x1
+    dy = y2 - y1
+    seg_len_sq = dx*dx + dy*dy
+
+    if seg_len_sq < 1e-10:
+        return x1, y1
+
+    # Project point onto line, clamped to [0,1]
+    t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / seg_len_sq))
+
+    return x1 + t * dx, y1 + t * dy
+
+
+def find_closest_branch_point(px: float, py: float,
+                               segments: list[tuple]) -> tuple[float, float, int]:
+    """
+    Find the closest point on any branch segment to a given point.
+
+    Returns (closest_x, closest_y, segment_idx)
+    """
+    best_dist = float('inf')
+    best_point = (px, py)
+    best_idx = 0
+
+    for (x1, y1, x2, y2, idx) in segments:
+        cx, cy = closest_point_on_segment(px, py, x1, y1, x2, y2)
+        dist = np.sqrt((cx - px)**2 + (cy - py)**2)
+
+        if dist < best_dist:
+            best_dist = dist
+            best_point = (cx, cy)
+            best_idx = idx
+
+    return best_point[0], best_point[1], best_idx
+
+
+def draw_micro_shoot(ax, leaf_x: float, leaf_y: float,
+                     branch_x: float, branch_y: float,
+                     wood_color: str = '#5D4037',
+                     lead_color: str = '#1a1a1a'):
+    """
+    Draw a thin twig connecting a leaf to the branch skeleton.
+
+    This makes leaves look "attached" rather than floating.
+    """
+    # Lead outline (thin black)
+    ax.plot(
+        [branch_x, leaf_x], [branch_y, leaf_y],
+        color=lead_color,
+        linewidth=2.0,
+        solid_capstyle='round',
+        zorder=5,  # Above background, below leaves
+    )
+
+    # Wood fill (brown)
+    ax.plot(
+        [branch_x, leaf_x], [branch_y, leaf_y],
+        color=wood_color,
+        linewidth=1.2,
+        solid_capstyle='round',
+        zorder=6,
+    )
+
+
+# =============================================================================
+# ROSETTE FLOWERS (not circles!)
+# =============================================================================
+
+
+def draw_rosette_flower(ax, x: float, y: float, size: float,
+                        num_petals: int = 8,
+                        inner_ratio: float = 0.4,
+                        color: str = '#FF6B6B',
+                        center_color: str = '#FFE66D',
+                        edge_color: str = '#C0392B',
+                        rotation: float = 0.0,
+                        zorder: int = 8):
+    """
+    Draw a rosette/shuriken flower instead of a circle.
+
+    Creates alternating vertices at outer/inner radii to form petals.
+
+    Args:
+        ax: Matplotlib axes
+        x, y: Center position
+        size: Outer radius
+        num_petals: Number of petals (8-12 recommended)
+        inner_ratio: Inner radius as fraction of outer (0.3-0.5)
+        color: Petal fill color
+        center_color: Center disk color
+        edge_color: Edge/outline color
+        rotation: Rotation in radians
+        zorder: Drawing order
+    """
+    # Create alternating radii for star/rosette shape
+    angles = np.linspace(0, 2*np.pi, num_petals * 2, endpoint=False) + rotation
+    radii = np.array([size if i % 2 == 0 else size * inner_ratio
+                      for i in range(num_petals * 2)])
+
+    # Compute vertices
+    verts_x = x + radii * np.cos(angles)
+    verts_y = y + radii * np.sin(angles)
+    verts = list(zip(verts_x, verts_y))
+
+    # Draw petals
+    rosette = Polygon(
+        verts,
+        facecolor=color,
+        edgecolor=edge_color,
+        linewidth=1.0,
+        zorder=zorder,
+        alpha=0.9,
+    )
+    ax.add_patch(rosette)
+
+    # Draw center disk
+    center = mpatches.Circle(
+        (x, y),
+        radius=size * inner_ratio * 0.6,
+        facecolor=center_color,
+        edgecolor=edge_color,
+        linewidth=0.5,
+        zorder=zorder + 1,
+    )
+    ax.add_patch(center)
 
 
 # =============================================================================
@@ -394,6 +566,9 @@ def render_stained_glass_tree(
     palette: LeafStyle = AUTUMN_PALETTE,
     show_background: bool = True,
     show_ground: bool = True,
+    show_micro_shoots: bool = True,
+    max_flower_ratio: float = 0.10,  # Max flowers as fraction of leaves
+    flower_size_cap: float = 0.05,   # Maximum flower radius
     title: str = "",
     seed: int = 42,
 ):
@@ -402,9 +577,16 @@ def render_stained_glass_tree(
 
     This is the main visualization function that combines:
     - Lead-came branch rendering
-    - Poisson-sampled canopy leaves
+    - Poisson-sampled canopy leaves WITH micro-shoot attachments
+    - Rosette-style flowers (not circles)
     - Stylized background panels
     - Ground segments
+
+    Key aesthetic rules enforced:
+    - Leaves are attached to skeleton via micro-shoots
+    - Flowers are rosettes, not circles
+    - Flowers are tucked INSIDE canopy (lower z-order than leaves)
+    - Flower count is capped (5-10% of leaf count)
 
     Args:
         skeleton: SkeletonState to render
@@ -415,6 +597,9 @@ def render_stained_glass_tree(
         palette: LeafStyle for coloring
         show_background: Draw background panels
         show_ground: Draw ground segments
+        show_micro_shoots: Draw twigs connecting leaves to branches
+        max_flower_ratio: Maximum flowers as fraction of leaf count
+        flower_size_cap: Maximum flower radius
         title: Plot title
         seed: Random seed for reproducibility
 
@@ -424,11 +609,15 @@ def render_stained_glass_tree(
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
 
+    np.random.seed(seed)
     ax.set_facecolor('#FFF8DC')  # Warm cream background
 
     # Get tip positions for canopy
     x, y, _ = compute_segment_positions_2d(skeleton)
     x, y = np.array(x), np.array(y)
+
+    # Pre-compute branch segments for micro-shoot attachment
+    branch_segments = get_branch_segments(skeleton)
 
     # Set axis limits based on tree extent
     x_margin = 0.5
@@ -449,8 +638,9 @@ def render_stained_glass_tree(
     # 3. Branches (lead-came style)
     draw_branches_lead_came(ax, skeleton)
 
-    # 4. Canopy leaves (Poisson sampled)
+    # 4. Canopy leaves (Poisson sampled) WITH micro-shoots
     hull_points = compute_canopy_hull(skeleton, padding=0.2)
+    leaf_count = 0
 
     if len(hull_points) >= 3:
         leaf_points = poisson_disk_sample(
@@ -459,8 +649,15 @@ def render_stained_glass_tree(
             min_distance=leaf_size * 0.8,
             seed=seed,
         )
+        leaf_count = len(leaf_points)
 
-        # Draw leaves
+        # Draw micro-shoots FIRST (behind leaves)
+        if show_micro_shoots and len(branch_segments) > 0:
+            for lx, ly in leaf_points:
+                bx, by, _ = find_closest_branch_point(lx, ly, branch_segments)
+                draw_micro_shoot(ax, lx, ly, bx, by)
+
+        # Draw leaves (on top of micro-shoots)
         for i, (lx, ly) in enumerate(leaf_points):
             # Angle pointing outward from trunk center
             angle = np.degrees(np.arctan2(ly, lx + 0.001)) - 90
@@ -486,7 +683,9 @@ def render_stained_glass_tree(
 
         draw_leaf(ax, tip_x, tip_y, size, angle, palette, seed=i + 1000 + seed)
 
-    # 6. Flowers (if present)
+    # 6. Flowers (rosettes, TUCKED INSIDE canopy, count-capped)
+    # Collect flower candidates
+    flower_candidates = []
     for i, tip_idx in enumerate(tip_indices):
         tip_idx = int(tip_idx)
         flower_area = float(skeleton.flower_area[tip_idx])
@@ -495,23 +694,38 @@ def render_stained_glass_tree(
         if flower_area < 0.05 or alive < 0.3:
             continue
 
-        # Draw flower as circle near tip
         tip_x, tip_y = x[tip_idx], y[tip_idx]
-        offset = 0.05
-        flower_x = tip_x + offset * np.cos(i)
-        flower_y = tip_y + offset * np.sin(i)
-        flower_size = 0.06 + 0.1 * np.sqrt(flower_area)
+        flower_candidates.append((tip_x, tip_y, flower_area, i))
 
-        flower_colors = ['#FF6B6B', '#FF8E8E', '#FFB4B4', '#E74C3C', '#FF4757']
-        flower = mpatches.Circle(
-            (flower_x, flower_y),
-            radius=flower_size,
-            facecolor=flower_colors[i % len(flower_colors)],
-            edgecolor='#C0392B',
-            linewidth=1.2,
-            zorder=15,
+    # Cap flower count to max_flower_ratio * leaf_count
+    max_flowers = max(2, int(leaf_count * max_flower_ratio))
+    # Sort by flower_area (descending) and take top N
+    flower_candidates.sort(key=lambda f: f[2], reverse=True)
+    flower_candidates = flower_candidates[:max_flowers]
+
+    # Draw flowers (z-order 8-9, BELOW leaves which are at 10-12)
+    flower_colors = ['#FF6B6B', '#FF8E8E', '#E74C3C', '#FF7675', '#D63031']
+    for tip_x, tip_y, flower_area, i in flower_candidates:
+        # Small offset to tuck into canopy gap
+        offset = 0.02
+        flower_x = tip_x + offset * np.cos(i * 0.7)
+        flower_y = tip_y + offset * np.sin(i * 0.7)
+
+        # Size: capped and scaled down
+        raw_size = 0.03 + 0.04 * np.sqrt(flower_area)
+        flower_size = min(raw_size, flower_size_cap)
+
+        draw_rosette_flower(
+            ax, flower_x, flower_y,
+            size=flower_size,
+            num_petals=np.random.choice([6, 8, 10]),
+            inner_ratio=0.35 + 0.1 * np.random.random(),
+            color=flower_colors[i % len(flower_colors)],
+            center_color='#FFE66D',
+            edge_color='#922B21',
+            rotation=np.random.random() * np.pi / 4,
+            zorder=8,  # BELOW leaves (10-12)
         )
-        ax.add_patch(flower)
 
     ax.set_aspect('equal')
     ax.axis('off')
