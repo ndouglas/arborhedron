@@ -225,5 +225,75 @@ def phased_policy(
     return softmax_allocation(logits)
 
 
+# =============================================================================
+# LEARNED POLICY PRIMITIVES (Week 2)
+# =============================================================================
+
+# Domain-informed priors from 03C analysis:
+# - Early: leaves-focused for photosynthesis
+# - Late: flowers-focused for reproduction
+PRIOR_EARLY_LOGITS = jnp.array([0.3, -0.5, 0.0, 1.0, -1.5])  # R, T, S, L, F
+PRIOR_LATE_LOGITS = jnp.array([-1.0, -1.0, -1.0, -0.5, 2.0])  # Strong flower dominance
+
+
+def linear_interpolation_policy(
+    early_logits: Array,
+    late_logits: Array,
+    day: int,
+    num_days: int,
+) -> Allocation:
+    """
+    Simple linear interpolation between early and late logits.
+
+    This is the minimal learnable policy architecture:
+    logits(t) = early_logits * (1 - t/T) + late_logits * (t/T)
+
+    Args:
+        early_logits: Allocation logits at day 0
+        late_logits: Allocation logits at final day
+        day: Current day
+        num_days: Total season length
+
+    Returns:
+        Allocation for this timestep
+    """
+    progress = day / num_days
+    logits = early_logits * (1.0 - progress) + late_logits * progress
+    return softmax_allocation(logits)
+
+
+def prior_delta_policy(
+    delta_early: Array,
+    delta_late: Array,
+    day: int,
+    num_days: int,
+) -> Allocation:
+    """
+    Prior + delta parameterization for stable optimization.
+
+    Uses domain-informed prior (from 03C analysis) with learnable deviations.
+    This avoids the "L2 fights commitment" pathology where regularization
+    prevents the sharp late-season flower transition needed for high fitness.
+
+    logits(t) = prior(t) + delta(t)
+
+    Regularize ||delta||^2, not ||logits||^2.
+
+    Args:
+        delta_early: Deviation from PRIOR_EARLY_LOGITS
+        delta_late: Deviation from PRIOR_LATE_LOGITS
+        day: Current day
+        num_days: Total season length
+
+    Returns:
+        Allocation for this timestep
+    """
+    progress = day / num_days
+    early_logits = PRIOR_EARLY_LOGITS + delta_early
+    late_logits = PRIOR_LATE_LOGITS + delta_late
+    logits = early_logits * (1.0 - progress) + late_logits * progress
+    return softmax_allocation(logits)
+
+
 # Type alias for policy functions
 PolicyFn = type(baseline_policy)
