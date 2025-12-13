@@ -272,6 +272,12 @@ class SimConfig:
     wind_steepness: float = 8.0
     alpha_shoot: float = 0.3  # Shoot damage coefficient
     alpha_leaf: float = 0.2  # Leaf damage coefficient
+    max_daily_damage: float = 0.05  # Cap on daily damage (prevents exponential death)
+
+    # Transpiration parameters (water loss from leaves)
+    # Transpiration = transp_rate * leaves * light
+    # This makes drought actually force root investment
+    transpiration_rate: float = 0.15  # Water lost per unit leaf per unit light
 
     # Seed production
     seed_energy_threshold: float = 0.5  # Minimum energy to produce seeds

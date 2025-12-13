@@ -103,6 +103,11 @@ def step(
     water = water - config.c_water_photo * photo_energy
     nutrients = nutrients - config.c_nutrient_photo * photo_energy
 
+    # 4b. Transpiration: leaves lose water proportional to leaf area and light
+    # This creates the "drought forces root investment" dynamic
+    transpiration = config.transpiration_rate * leaves * light
+    water = water - transpiration
+
     # 5. Maintenance costs
     maintenance = surrogates.maintenance_cost(
         state,
@@ -162,18 +167,25 @@ def step(
     nutrients = nutrients - config.c_nutrient_growth * total_growth
 
     # 8. Wind damage to tender growth (shoots and leaves)
+    # Key fix: Cap daily damage to prevent exponential genocide
     damage_factor = surrogates.wind_damage(
         jnp.array(wind),
         threshold=config.wind_threshold,
         steepness=config.wind_steepness,
     )
 
-    # Shoots are damaged by wind
-    shoot_damage = damage_factor * config.alpha_shoot
+    # Vulnerability decreases with trunk support (wood protects tender growth)
+    # vulnerability = 1 / (1 + trunk) gives smooth decrease
+    vulnerability = 1.0 / (1.0 + trunk)
+
+    # Shoots are damaged by wind (capped at max_daily_damage)
+    shoot_damage_rate = damage_factor * config.alpha_shoot * vulnerability
+    shoot_damage = jnp.minimum(shoot_damage_rate, config.max_daily_damage)
     shoots = shoots * (1.0 - shoot_damage)
 
-    # Leaves are damaged by wind
-    leaf_damage = damage_factor * config.alpha_leaf
+    # Leaves are damaged by wind (capped at max_daily_damage)
+    leaf_damage_rate = damage_factor * config.alpha_leaf * vulnerability
+    leaf_damage = jnp.minimum(leaf_damage_rate, config.max_daily_damage)
     leaves = leaves * (1.0 - leaf_damage)
 
     # 9. Structural penalty
