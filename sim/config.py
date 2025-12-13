@@ -242,8 +242,9 @@ class SimConfig:
     # Moisture optimum (inverted-U response)
     # Too dry: reduced uptake (drought stress)
     # Too wet: reduced uptake (root rot / anoxia)
+    # Sigma widened so sub-optimal moisture is survivable (was 0.25)
     moisture_optimum: float = 0.6  # Optimal moisture level
-    moisture_sigma: float = 0.25  # Width of optimal moisture band
+    moisture_sigma: float = 0.35  # Width of optimal moisture band
 
     # Maintenance costs (per unit biomass per day)
     m_root: float = 0.01
@@ -282,9 +283,11 @@ class SimConfig:
     wind_threshold: float = 0.5  # Wind level where damage starts
     # Steepness: 8-15 recommended. Higher = vanishing gradients outside narrow band.
     wind_steepness: float = 8.0
-    alpha_shoot: float = 0.3  # Shoot damage coefficient
-    alpha_leaf: float = 0.2  # Leaf damage coefficient
-    alpha_flower: float = 0.7  # Flower damage coefficient (flowers are tender!)
+    # Damage coefficients tuned so adverse climates stress but don't destroy trees
+    # Rule: (1 - alpha * max_damage * 0.5)^100 should leave ~10-20% survival
+    alpha_shoot: float = 0.12  # Shoot damage coefficient (was 0.3)
+    alpha_leaf: float = 0.08  # Leaf damage coefficient (was 0.2)
+    alpha_flower: float = 0.25  # Flower damage coefficient (was 0.7, still vulnerable)
     max_wind_damage: float = 0.5  # Maximum base damage per day (before protection)
 
     # Wood protection against wind
@@ -314,9 +317,10 @@ class SimConfig:
     # Drought leaf damage parameters (B)
     # When water drops critically low, leaves die back (senescence)
     # This is the "nuclear option" for water conservation
+    # Tuned so drought stresses but doesn't destroy: (1 - 0.10 * 0.5)^100 ≈ 0.6%
     drought_critical: float = 0.15  # Water level where damage starts
     drought_steepness: float = 15.0  # How sharply damage ramps up
-    drought_max_damage: float = 0.25  # Maximum daily leaf loss (25%)
+    drought_max_damage: float = 0.10  # Maximum daily leaf loss (was 0.25)
 
     # Flowering and seed production
     flowering_maturity: float = 0.4  # Season progress (0-1) before flowers can grow

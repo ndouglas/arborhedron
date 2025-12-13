@@ -848,10 +848,11 @@ class TestFlowerWindDamageAblation:
             state, alloc, light=0.7, moisture=0.6, wind=0.8, config=config, day=70
         )
 
-        # Flowers should take significant damage
-        # alpha_flower = 0.7, high wind, no protection
+        # Flowers should take meaningful damage
+        # alpha_flower = 0.25, high wind, no protection
+        # At wind=0.8: base_damage ≈ 0.46, flower_damage ≈ 0.46 * 0.25 ≈ 0.11
         flower_loss = float(state.flowers - new_state.flowers) / float(state.flowers)
-        assert flower_loss > 0.15  # Lost at least 15% of flowers
+        assert flower_loss > 0.05  # Lost at least 5% of flowers
 
     def test_trunk_protects_flowers_from_wind(self) -> None:
         """Trunk provides substantial protection for flowers."""
@@ -918,10 +919,12 @@ class TestFlowerWindDamageAblation:
         )
 
         # Trunk should meaningfully improve survival rate
-        # With trunk=1.0 and k=2.0, protection ≈ 0.9 * (1 - exp(-2)) ≈ 0.78
-        # So protected damage ≈ (1 - 0.78) = 0.22 of unprotected damage
-        # survival_protected / survival_unprotected should be > 1.2
-        assert survival_protected > survival_unprotected * 1.2
+        # With lower alpha_flower (0.25), damage is gentler, so improvement is subtler
+        # Protected: ~98.5% survival, Unprotected: ~90% survival
+        # The ratio improvement should be > 1.05
+        assert survival_protected > survival_unprotected * 1.05
+        # Also verify protected is actually better
+        assert survival_protected > survival_unprotected
 
     def test_flower_protection_stronger_than_leaf(self) -> None:
         """Flowers get more protection from trunk than leaves do."""
