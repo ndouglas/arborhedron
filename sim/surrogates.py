@@ -812,3 +812,108 @@ def growth_efficiency(
     combined_eff = gradient_floor + (1.0 - gradient_floor) * raw_product
 
     return base_efficiency * combined_eff
+
+
+def crowding_penalty(
+    occupant: Scalar,
+    scaffold: Scalar,
+    capacity_per_scaffold: float,
+    steepness: float = 5.0,
+    floor: float = 0.1,
+) -> Array:
+    """
+    Compute growth penalty due to crowding on scaffold structure.
+
+    Generic function for capacity constraints where one compartment (the occupant)
+    needs another compartment (the scaffold) to grow on. When occupants exceed
+    scaffold capacity, growth efficiency drops.
+
+    penalty = floor + (1 - floor) · σ(steepness · (1 - crowding))
+
+    where crowding = occupant / (capacity_per_scaffold · scaffold + ε)
+
+    When occupant < capacity: crowding < 1, efficiency ≈ 1 (no penalty)
+    When occupant > capacity: crowding > 1, efficiency → floor
+
+    Used for:
+    - Leaves on shoots: can't grow leaves without branches
+    - Flowers on shoots: can't grow flowers without branches
+
+    Args:
+        occupant: Current biomass of the occupying compartment (leaves or flowers)
+        scaffold: Current biomass of the scaffold compartment (shoots)
+        capacity_per_scaffold: How much occupant each unit of scaffold can support
+        steepness: How sharply penalty ramps up when crowded
+        floor: Minimum efficiency even when severely crowded
+
+    Returns:
+        Growth efficiency multiplier in [floor, 1]
+    """
+    # Capacity is proportional to scaffold
+    capacity = capacity_per_scaffold * jnp.array(scaffold) + 1e-6  # epsilon for stability
+
+    # Crowding ratio: >1 means overcrowded
+    crowding = jnp.array(occupant) / capacity
+
+    # Sigmoid penalty: high when crowding < 1, low when crowding > 1
+    raw_penalty = sigmoid(steepness * (1.0 - crowding))
+
+    # Scale to [floor, 1]
+    return floor + (1.0 - floor) * raw_penalty
+
+
+def leaf_crowding_penalty(
+    leaves: Scalar,
+    shoots: Scalar,
+    k_shoot_leaf: float,
+    steepness: float = 5.0,
+    floor: float = 0.1,
+) -> Array:
+    """
+    Compute leaf growth penalty due to crowding on shoots.
+
+    Shoots are the scaffolding for leaves - you can't grow leaves without
+    branches to attach them to. When leaves exceed shoot capacity, growth
+    efficiency drops.
+
+    This is a convenience wrapper around crowding_penalty().
+
+    Args:
+        leaves: Current leaf biomass
+        shoots: Current shoot biomass
+        k_shoot_leaf: Leaf capacity per unit shoot
+        steepness: How sharply penalty ramps up when crowded
+        floor: Minimum efficiency even when severely crowded
+
+    Returns:
+        Growth efficiency multiplier in [floor, 1]
+    """
+    return crowding_penalty(leaves, shoots, k_shoot_leaf, steepness, floor)
+
+
+def flower_crowding_penalty(
+    flowers: Scalar,
+    shoots: Scalar,
+    k_shoot_flower: float,
+    steepness: float = 5.0,
+    floor: float = 0.1,
+) -> Array:
+    """
+    Compute flower growth penalty due to crowding on shoots.
+
+    Flowers grow on branches - you can't grow flowers without shoots to
+    attach them to. When flowers exceed shoot capacity, growth efficiency drops.
+
+    This is a convenience wrapper around crowding_penalty().
+
+    Args:
+        flowers: Current flower biomass
+        shoots: Current shoot biomass
+        k_shoot_flower: Flower capacity per unit shoot
+        steepness: How sharply penalty ramps up when crowded
+        floor: Minimum efficiency even when severely crowded
+
+    Returns:
+        Growth efficiency multiplier in [floor, 1]
+    """
+    return crowding_penalty(flowers, shoots, k_shoot_flower, steepness, floor)

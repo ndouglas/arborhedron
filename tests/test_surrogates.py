@@ -1018,3 +1018,199 @@ class TestFlowerWindDamage:
                 assert float(result) >= 0.0
                 # Max possible: alpha_flower * max_damage = 0.7 * 0.5 = 0.35
                 assert float(result) <= 0.7 * 0.5 + 0.01
+
+
+class TestLeafCrowdingPenalty:
+    """Tests for leaf crowding penalty (shoot capacity constraint)."""
+
+    def test_few_leaves_full_efficiency(self) -> None:
+        """With leaves well below shoot capacity, growth efficiency is high."""
+        # Capacity = 5.0 * 1.0 = 5.0 leaves; current leaves = 0.5
+        result = surrogates.leaf_crowding_penalty(
+            leaves=0.5,
+            shoots=1.0,
+            k_shoot_leaf=5.0,
+            steepness=5.0,
+            floor=0.1,
+        )
+        assert float(result) > 0.9  # Nearly full efficiency
+
+    def test_overcrowded_reduced_efficiency(self) -> None:
+        """With leaves exceeding shoot capacity, growth efficiency is reduced."""
+        # Capacity = 5.0 * 1.0 = 5.0 leaves; current leaves = 10.0 (overcrowded)
+        result = surrogates.leaf_crowding_penalty(
+            leaves=10.0,
+            shoots=1.0,
+            k_shoot_leaf=5.0,
+            steepness=5.0,
+            floor=0.1,
+        )
+        # Crowding ratio = 10.0 / 5.0 = 2.0 → well overcrowded
+        assert float(result) < 0.3  # Significantly reduced
+
+    def test_floor_preserved_when_overcrowded(self) -> None:
+        """Even when severely overcrowded, efficiency doesn't go below floor."""
+        result = surrogates.leaf_crowding_penalty(
+            leaves=100.0,  # Severely overcrowded
+            shoots=1.0,
+            k_shoot_leaf=5.0,
+            steepness=5.0,
+            floor=0.1,
+        )
+        assert float(result) >= 0.1  # Floor preserved
+
+    def test_more_shoots_more_capacity(self) -> None:
+        """More shoots means more leaf capacity."""
+        # Same leaves, different shoot amounts
+        eff_few_shoots = surrogates.leaf_crowding_penalty(
+            leaves=5.0,
+            shoots=0.5,  # Capacity = 2.5
+            k_shoot_leaf=5.0,
+        )
+        eff_more_shoots = surrogates.leaf_crowding_penalty(
+            leaves=5.0,
+            shoots=2.0,  # Capacity = 10.0
+            k_shoot_leaf=5.0,
+        )
+        # More shoots = more capacity = less crowding = higher efficiency
+        assert float(eff_more_shoots) > float(eff_few_shoots)
+
+    def test_at_capacity_half_penalty(self) -> None:
+        """At exactly capacity (crowding=1), penalty should be around midpoint."""
+        # Capacity = 5.0 * 1.0 = 5.0 leaves; current leaves = 5.0 (at capacity)
+        result = surrogates.leaf_crowding_penalty(
+            leaves=5.0,
+            shoots=1.0,
+            k_shoot_leaf=5.0,
+            steepness=5.0,
+            floor=0.1,
+        )
+        # At crowding=1.0: sigmoid(5.0 * 0) = 0.5
+        # Efficiency = 0.1 + 0.9 * 0.5 = 0.55
+        assert jnp.isclose(result, 0.55, atol=0.1)
+
+    def test_zero_shoots_minimum_efficiency(self) -> None:
+        """With no shoots, capacity is minimal, so efficiency is at floor."""
+        result = surrogates.leaf_crowding_penalty(
+            leaves=1.0,
+            shoots=0.0,  # No shoots!
+            k_shoot_leaf=5.0,
+            steepness=5.0,
+            floor=0.1,
+        )
+        # capacity ≈ 1e-6 (epsilon), crowding → infinity
+        # sigmoid(5 * (1 - infinity)) → 0
+        # efficiency → floor
+        assert float(result) < 0.15  # Close to floor
+
+    def test_steepness_affects_transition(self) -> None:
+        """Higher steepness makes sharper transition at capacity."""
+        leaves = 6.0  # Slightly over capacity of 5.0
+        shoots = 1.0
+        k = 5.0
+
+        eff_soft = surrogates.leaf_crowding_penalty(
+            leaves=leaves, shoots=shoots, k_shoot_leaf=k, steepness=2.0
+        )
+        eff_sharp = surrogates.leaf_crowding_penalty(
+            leaves=leaves, shoots=shoots, k_shoot_leaf=k, steepness=10.0
+        )
+        # Sharper transition → lower efficiency when slightly overcrowded
+        assert float(eff_sharp) < float(eff_soft)
+
+    def test_output_bounded(self) -> None:
+        """Efficiency is always in [floor, 1]."""
+        for leaves in [0.0, 1.0, 5.0, 20.0]:
+            for shoots in [0.0, 0.5, 1.0, 2.0]:
+                result = surrogates.leaf_crowding_penalty(
+                    leaves=leaves,
+                    shoots=shoots,
+                    k_shoot_leaf=5.0,
+                    steepness=5.0,
+                    floor=0.1,
+                )
+                assert float(result) >= 0.1  # Never below floor
+                assert float(result) <= 1.0  # Never above 1
+
+
+class TestFlowerCrowdingPenalty:
+    """Tests for flower crowding penalty (shoot capacity constraint for flowers)."""
+
+    def test_few_flowers_full_efficiency(self) -> None:
+        """With flowers well below shoot capacity, growth efficiency is high."""
+        # Capacity = 8.0 * 1.0 = 8.0 flowers; current flowers = 0.5
+        result = surrogates.flower_crowding_penalty(
+            flowers=0.5,
+            shoots=1.0,
+            k_shoot_flower=8.0,
+            steepness=5.0,
+            floor=0.1,
+        )
+        assert float(result) > 0.9  # Nearly full efficiency
+
+    def test_overcrowded_reduced_efficiency(self) -> None:
+        """With flowers exceeding shoot capacity, growth efficiency is reduced."""
+        # Capacity = 8.0 * 1.0 = 8.0 flowers; current flowers = 16.0 (overcrowded)
+        result = surrogates.flower_crowding_penalty(
+            flowers=16.0,
+            shoots=1.0,
+            k_shoot_flower=8.0,
+            steepness=5.0,
+            floor=0.1,
+        )
+        # Crowding ratio = 16.0 / 8.0 = 2.0 → well overcrowded
+        assert float(result) < 0.3  # Significantly reduced
+
+    def test_floor_preserved_when_overcrowded(self) -> None:
+        """Even when severely overcrowded, efficiency doesn't go below floor."""
+        result = surrogates.flower_crowding_penalty(
+            flowers=100.0,  # Severely overcrowded
+            shoots=1.0,
+            k_shoot_flower=8.0,
+            steepness=5.0,
+            floor=0.1,
+        )
+        assert float(result) >= 0.1  # Floor preserved
+
+    def test_more_shoots_more_flower_capacity(self) -> None:
+        """More shoots means more flower capacity."""
+        # Same flowers, different shoot amounts
+        eff_few_shoots = surrogates.flower_crowding_penalty(
+            flowers=8.0,
+            shoots=0.5,  # Capacity = 4.0
+            k_shoot_flower=8.0,
+        )
+        eff_more_shoots = surrogates.flower_crowding_penalty(
+            flowers=8.0,
+            shoots=2.0,  # Capacity = 16.0
+            k_shoot_flower=8.0,
+        )
+        # More shoots = more capacity = less crowding = higher efficiency
+        assert float(eff_more_shoots) > float(eff_few_shoots)
+
+    def test_zero_shoots_minimum_efficiency(self) -> None:
+        """With no shoots, capacity is minimal, so efficiency is at floor."""
+        result = surrogates.flower_crowding_penalty(
+            flowers=1.0,
+            shoots=0.0,  # No shoots!
+            k_shoot_flower=8.0,
+            steepness=5.0,
+            floor=0.1,
+        )
+        # capacity ≈ 1e-6 (epsilon), crowding → infinity
+        # efficiency → floor
+        assert float(result) < 0.15  # Close to floor
+
+    def test_output_bounded(self) -> None:
+        """Efficiency is always in [floor, 1]."""
+        for flowers in [0.0, 1.0, 8.0, 30.0]:
+            for shoots in [0.0, 0.5, 1.0, 2.0]:
+                result = surrogates.flower_crowding_penalty(
+                    flowers=flowers,
+                    shoots=shoots,
+                    k_shoot_flower=8.0,
+                    steepness=5.0,
+                    floor=0.1,
+                )
+                assert float(result) >= 0.1  # Never below floor
+                assert float(result) <= 1.0  # Never above 1

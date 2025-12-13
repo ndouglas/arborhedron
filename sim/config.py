@@ -290,6 +290,24 @@ class SimConfig:
     # Rule of thumb: in a healthy rollout, penalty should be < 20% of photosynthesis.
     structural_penalty: float = 0.05
 
+    # Shoot-leaf capacity constraint
+    # Shoots are the scaffolding for leaves - you can't grow leaves without branches.
+    # leaf_capacity = k_shoot_leaf * shoots
+    # When leaves > capacity, leaf growth efficiency drops via sigmoid penalty.
+    # This creates the dynamic: need shoots to hold leaves, need leaves to photosynthesize.
+    # Lower k = more shoots needed. At k=2, half your canopy biomass must be shoots.
+    k_shoot_leaf: float = 2.0  # Each unit of shoot supports 2 units of leaves
+    leaf_crowding_steepness: float = 5.0  # How sharply growth penalty ramps up
+    leaf_crowding_floor: float = 0.1  # Minimum growth efficiency even when crowded
+
+    # Shoot-flower capacity constraint
+    # Flowers also grow on branches - you can't have flowers without shoots to hold them.
+    # flower_capacity = k_shoot_flower * shoots
+    # This makes shoots doubly valuable: they hold both leaves AND flowers.
+    k_shoot_flower: float = 3.0  # Each unit of shoot supports 3 units of flowers
+    flower_crowding_steepness: float = 5.0  # How sharply growth penalty ramps up
+    flower_crowding_floor: float = 0.1  # Minimum growth efficiency even when crowded
+
     # Wind damage parameters
     wind_threshold: float = 0.5  # Wind level where damage starts
     # Steepness: 8-15 recommended. Higher = vanishing gradients outside narrow band.

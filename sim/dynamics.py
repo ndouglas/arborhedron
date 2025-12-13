@@ -207,11 +207,37 @@ def step(
     # This creates a strong incentive to NOT allocate to flowers until ready
     gated_flower_alloc = allocation.flowers * flower_gate
 
+    # Leaf crowding penalty: shoots are scaffolding for leaves
+    # When leaves exceed shoot capacity, leaf growth efficiency drops
+    # This creates the dynamic: need shoots → can grow leaves → can photosynthesize
+    leaf_crowding = surrogates.leaf_crowding_penalty(
+        leaves=leaves,
+        shoots=shoots,
+        k_shoot_leaf=config.k_shoot_leaf,
+        steepness=config.leaf_crowding_steepness,
+        floor=config.leaf_crowding_floor,
+    )
+    # Apply crowding penalty to leaf efficiency
+    effective_leaf_eta = config.eta_leaf * leaf_crowding
+
+    # Flower crowding penalty: shoots are also scaffolding for flowers
+    # When flowers exceed shoot capacity, flower growth efficiency drops
+    # Combined with leaf crowding, this makes shoots doubly valuable
+    flower_crowding = surrogates.flower_crowding_penalty(
+        flowers=flowers,
+        shoots=shoots,
+        k_shoot_flower=config.k_shoot_flower,
+        steepness=config.flower_crowding_steepness,
+        floor=config.flower_crowding_floor,
+    )
+    # Apply crowding penalty to flower efficiency
+    effective_flower_eta = config.eta_flower * flower_crowding
+
     root_growth, root_cost = compute_growth(allocation.roots, config.eta_root)
     trunk_growth, trunk_cost = compute_growth(allocation.trunk, config.eta_trunk)
     shoot_growth, shoot_cost = compute_growth(allocation.shoots, config.eta_shoot)
-    leaf_growth, leaf_cost = compute_growth(allocation.leaves, config.eta_leaf)
-    flower_growth, flower_cost = compute_growth(gated_flower_alloc, config.eta_flower)
+    leaf_growth, leaf_cost = compute_growth(allocation.leaves, effective_leaf_eta)
+    flower_growth, flower_cost = compute_growth(gated_flower_alloc, effective_flower_eta)
 
     # Apply growth
     roots = roots + root_growth
@@ -425,6 +451,26 @@ def diagnose_energy_budget(
     # Self-shading efficiency (for debugging)
     leaf_eff = float(surrogates.leaf_area_efficiency(state.leaves, config.k_leaf))
 
+    # Leaf crowding (shoot capacity constraint)
+    leaf_crowding = surrogates.leaf_crowding_penalty(
+        leaves=state.leaves,
+        shoots=state.shoots,
+        k_shoot_leaf=config.k_shoot_leaf,
+        steepness=config.leaf_crowding_steepness,
+        floor=config.leaf_crowding_floor,
+    )
+    leaf_capacity = config.k_shoot_leaf * float(state.shoots)
+
+    # Flower crowding (shoot capacity constraint)
+    flower_crowding = surrogates.flower_crowding_penalty(
+        flowers=state.flowers,
+        shoots=state.shoots,
+        k_shoot_flower=config.k_shoot_flower,
+        steepness=config.flower_crowding_steepness,
+        floor=config.flower_crowding_floor,
+    )
+    flower_capacity = config.k_shoot_flower * float(state.shoots)
+
     # Drought mechanics
     stomatal = surrogates.stomatal_conductance(
         water=state.water,
@@ -464,6 +510,12 @@ def diagnose_energy_budget(
         "soil_water": float(state.soil_water),
         "soil_recharge": float(recharge),
         "soil_water_extracted": float(water_extracted),
+        # Leaf crowding (shoot capacity constraint)
+        "leaf_crowding_penalty": float(leaf_crowding),
+        "leaf_capacity": leaf_capacity,
+        # Flower crowding (shoot capacity constraint)
+        "flower_crowding_penalty": float(flower_crowding),
+        "flower_capacity": flower_capacity,
     }
 
 
