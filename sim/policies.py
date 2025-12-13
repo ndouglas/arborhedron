@@ -297,3 +297,178 @@ def prior_delta_policy(
 
 # Type alias for policy functions
 PolicyFn = type(baseline_policy)
+
+
+# =============================================================================
+# NEURAL POLICY (Week 2/3)
+# =============================================================================
+
+import equinox as eqx
+from jax import random as jr
+
+
+class NeuralPolicy(eqx.Module):
+    """
+    Neural network policy for tree growth allocation.
+
+    Takes tree state + environment as input, outputs allocation fractions.
+
+    Architecture:
+    - Input: [state (8), progress (1), environment (3)] = 12 features
+    - Hidden: 2 layers of 32 units with tanh activation
+    - Output: 5 logits → softmax → allocation
+
+    The architecture is deliberately simple - we're testing whether
+    autodiff can learn temporal strategies, not building a massive model.
+    """
+
+    layers: list
+
+    def __init__(self, key: Array, hidden_size: int = 32, num_hidden: int = 2):
+        """
+        Initialize neural policy with random weights.
+
+        Args:
+            key: JAX random key for initialization
+            hidden_size: Number of units per hidden layer
+            num_hidden: Number of hidden layers
+        """
+        input_size = 12  # 8 state + 1 progress + 3 environment
+        output_size = 5  # allocation logits
+
+        keys = jr.split(key, num_hidden + 1)
+
+        layers = []
+        in_size = input_size
+        for i in range(num_hidden):
+            layers.append(eqx.nn.Linear(in_size, hidden_size, key=keys[i]))
+            in_size = hidden_size
+        layers.append(eqx.nn.Linear(in_size, output_size, key=keys[-1]))
+
+        self.layers = layers
+
+    def __call__(self, features: Array) -> Array:
+        """
+        Forward pass: features → logits.
+
+        Args:
+            features: Input features [batch, 12] or [12]
+
+        Returns:
+            Allocation logits [batch, 5] or [5]
+        """
+        x = features
+        for layer in self.layers[:-1]:
+            x = jnp.tanh(layer(x))  # tanh for smooth gradients
+        logits = self.layers[-1](x)
+        return logits
+
+
+def make_policy_features(
+    state: TreeState,
+    day: int,
+    num_days: int,
+    light: float,
+    moisture: float,
+    wind: float,
+) -> Array:
+    """
+    Extract input features for neural policy.
+
+    Features are lightly normalized to roughly [-1, 2] range.
+
+    Args:
+        state: Current tree state
+        day: Current day
+        num_days: Total season length
+        light: Current light level [0, 1]
+        moisture: Current moisture level [0, 1]
+        wind: Current wind level [0, 1]
+
+    Returns:
+        Feature vector of shape [12]
+    """
+    # State features (divide by typical max values for rough normalization)
+    # Energy/water/nutrients typically in [0, 1]
+    # Biomass typically in [0, 3]
+    state_features = jnp.array([
+        state.energy,           # [0, 1] typically
+        state.water,            # [0, 1] typically
+        state.nutrients,        # [0, 1] typically
+        state.roots / 2.0,      # normalize to ~[0, 1.5]
+        state.trunk / 2.0,
+        state.shoots / 2.0,
+        state.leaves / 2.0,
+        state.flowers / 2.0,
+    ])
+
+    # Progress through season [0, 1]
+    progress = jnp.array([day / num_days])
+
+    # Environment features (already in [0, 1])
+    env_features = jnp.array([light, moisture, wind])
+
+    return jnp.concatenate([state_features, progress, env_features])
+
+
+def apply_neural_policy(
+    policy: NeuralPolicy,
+    state: TreeState,
+    day: int,
+    num_days: int,
+    light: float,
+    moisture: float,
+    wind: float,
+) -> Allocation:
+    """
+    Apply neural policy to get allocation.
+
+    This is the main interface for using the neural policy.
+
+    Args:
+        policy: Trained NeuralPolicy module
+        state: Current tree state
+        day: Current day
+        num_days: Total season length
+        light: Current light level
+        moisture: Current moisture level
+        wind: Current wind level
+
+    Returns:
+        Allocation for this timestep
+    """
+    features = make_policy_features(state, day, num_days, light, moisture, wind)
+    logits = policy(features)
+    return softmax_allocation(logits)
+
+
+def make_neural_policy_fn(
+    policy: NeuralPolicy,
+    num_days: int,
+    light_fn,
+    moisture_fn,
+    wind_fn,
+):
+    """
+    Create a standard policy function from a NeuralPolicy.
+
+    This wraps the neural policy to match the signature expected by run_season.
+
+    Args:
+        policy: NeuralPolicy module
+        num_days: Total season length
+        light_fn: Function day → light value
+        moisture_fn: Function day → moisture value
+        wind_fn: Function day → wind value
+
+    Returns:
+        Policy function with signature (state, day, num_days, wind) → Allocation
+    """
+    def policy_fn(state: TreeState, day: int, num_days_arg: int, wind: float = 0.0) -> Allocation:
+        # Get environment values for this day
+        light = light_fn(day)
+        moisture = moisture_fn(day)
+        wind_val = wind_fn(day)
+        return apply_neural_policy(policy, state, day, num_days, light, moisture, wind_val)
+
+    return policy_fn

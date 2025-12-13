@@ -14,14 +14,24 @@ Modules:
 """
 
 from sim.config import Allocation, ClimateConfig, SimConfig, StressParams, TreeState
+from sim.policies import (
+    NeuralPolicy,
+    apply_neural_policy,
+    make_neural_policy_fn,
+    make_policy_features,
+)
 from sim.rollout import Trajectory, run_season
 
 __all__ = [
     "Allocation",
     "ClimateConfig",
+    "NeuralPolicy",
     "SimConfig",
     "StressParams",
-    "TreeState",
     "Trajectory",
+    "TreeState",
+    "apply_neural_policy",
+    "make_neural_policy_fn",
+    "make_policy_features",
     "run_season",
 ]

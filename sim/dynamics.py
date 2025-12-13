@@ -538,3 +538,39 @@ def compute_seeds(state: TreeState, config: SimConfig) -> Array:
         energy_threshold=config.seed_energy_threshold,
         conversion=config.seed_conversion,
     )
+
+
+def compute_seeds_integral(
+    flower_integral: Array,
+    final_energy: Array,
+    config: SimConfig,
+) -> Array:
+    """
+    Compute seed production from integrated flower-days.
+
+    This rewards SUSTAINED flowering rather than a last-minute dump.
+    Biologically: flowers need time to mature, be pollinated, and set fruit.
+
+    Seeds = conversion * flower_integral * sigmoid(energy - threshold)
+
+    The flower_integral is the sum of flower biomass over all days,
+    representing "flower-days" of reproductive investment.
+
+    Args:
+        flower_integral: Sum of flower biomass over season (flower-days)
+        final_energy: Final energy level (gates seed conversion)
+        config: Simulation configuration
+
+    Returns:
+        Number of seeds produced
+    """
+    # Normalize by season length so the conversion rate stays meaningful
+    # This makes flower_integral comparable to "average flower biomass"
+    normalized_integral = flower_integral / config.num_days
+
+    return surrogates.seed_production(
+        flowers=normalized_integral,
+        energy=final_energy,
+        energy_threshold=config.seed_energy_threshold,
+        conversion=config.seed_conversion,
+    )
