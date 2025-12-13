@@ -169,8 +169,8 @@ class TestPhotosynthesis:
         )
         assert jnp.isclose(result, 0.0, atol=1e-6)
 
-    def test_no_light_no_photosynthesis(self) -> None:
-        """Zero light means zero photosynthesis."""
+    def test_no_light_low_photosynthesis(self) -> None:
+        """Zero light means very low photosynthesis (gradient floor only)."""
         result = surrogates.photosynthesis(
             leaves=1.0,
             light=0.0,
@@ -181,10 +181,12 @@ class TestPhotosynthesis:
             k_water=0.2,
             k_nutrient=0.2,
         )
-        assert jnp.isclose(result, 0.0, atol=1e-6)
+        # With gradient floor, result is small but nonzero (floor * p_max * leaves)
+        assert result > 0  # Floor keeps gradient signal alive
+        assert result < 0.1  # But still very small
 
-    def test_no_water_no_photosynthesis(self) -> None:
-        """Zero water means zero photosynthesis."""
+    def test_no_water_low_photosynthesis(self) -> None:
+        """Zero water means very low photosynthesis (gradient floor only)."""
         result = surrogates.photosynthesis(
             leaves=1.0,
             light=0.8,
@@ -195,7 +197,9 @@ class TestPhotosynthesis:
             k_water=0.2,
             k_nutrient=0.2,
         )
-        assert jnp.isclose(result, 0.0, atol=1e-6)
+        # With gradient floor, result is small but nonzero
+        assert result > 0  # Floor keeps gradient signal alive
+        assert result < 0.1  # But still very small
 
     def test_scales_with_leaves(self) -> None:
         """More leaves means more photosynthesis."""

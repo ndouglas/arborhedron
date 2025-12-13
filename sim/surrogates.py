@@ -164,14 +164,21 @@ def photosynthesis(
     k_light: float,
     k_water: float,
     k_nutrient: float,
+    gradient_floor: float = 0.03,
 ) -> Array:
     """
     Combined photosynthesis rate with multiple limiting factors.
 
-    P = L · P_max · f_I(I) · f_W(W) · f_N(N)
+    P = L · P_max · combined_efficiency
 
-    Uses multiplicative Michaelis-Menten model where each resource
-    can independently limit the rate.
+    where combined_efficiency uses a gradient-preserving floor:
+
+        eff = eps + (1 - eps) · f_I(I) · f_W(W) · f_N(N)
+
+    IMPORTANT: Pure multiplicative limiting (f_I * f_W * f_N) kills gradients
+    when any factor is near 0 (common at seed stage). The floor ensures
+    gradient signal flows even in resource-poor states, preventing the
+    optimizer from getting stuck in "can't escape seed stage" local optima.
 
     Args:
         leaves: Leaf biomass
@@ -182,6 +189,7 @@ def photosynthesis(
         k_light: Light half-saturation constant
         k_water: Water half-saturation constant
         k_nutrient: Nutrient half-saturation constant
+        gradient_floor: Minimum efficiency floor (0.02-0.05 recommended)
 
     Returns:
         Energy produced this timestep
@@ -190,7 +198,11 @@ def photosynthesis(
     water_eff = saturation(jnp.array(water), k_water)
     nutrient_eff = saturation(jnp.array(nutrients), k_nutrient)
 
-    return jnp.array(leaves) * p_max * light_eff * water_eff * nutrient_eff
+    # Gradient-preserving floor: prevents gradient death at low resources
+    raw_product = light_eff * water_eff * nutrient_eff
+    combined_eff = gradient_floor + (1.0 - gradient_floor) * raw_product
+
+    return jnp.array(leaves) * p_max * combined_eff
 
 
 def root_uptake(
@@ -344,13 +356,16 @@ def growth_efficiency(
     base_efficiency: float,
     k_water: float,
     k_nutrient: float,
+    gradient_floor: float = 0.03,
 ) -> Array:
     """
     Compute growth efficiency based on resource availability.
 
-    η = η₀ · f_W(W) · f_N(N)
+    Uses gradient-preserving floor:
+        η = η₀ · (eps + (1 - eps) · f_W(W) · f_N(N))
 
-    Growth is limited by both water and nutrients.
+    Growth is limited by both water and nutrients, but the floor
+    ensures gradient signal flows even at low resource levels.
 
     Args:
         water: Water store
@@ -358,10 +373,16 @@ def growth_efficiency(
         base_efficiency: Base efficiency (e.g., eta_root, eta_leaf)
         k_water: Water half-saturation
         k_nutrient: Nutrient half-saturation
+        gradient_floor: Minimum efficiency floor (0.02-0.05 recommended)
 
     Returns:
         Effective growth efficiency
     """
     water_eff = saturation(jnp.array(water), k_water)
     nutrient_eff = saturation(jnp.array(nutrients), k_nutrient)
-    return base_efficiency * water_eff * nutrient_eff
+
+    # Gradient-preserving floor
+    raw_product = water_eff * nutrient_eff
+    combined_eff = gradient_floor + (1.0 - gradient_floor) * raw_product
+
+    return base_efficiency * combined_eff
