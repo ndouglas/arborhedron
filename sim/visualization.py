@@ -18,7 +18,9 @@ import matplotlib.patches as mpatches
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch, Polygon
 from matplotlib.collections import PatchCollection
-from scipy.spatial import ConvexHull, Delaunay
+from scipy.spatial import ConvexHull, Delaunay, Voronoi
+from shapely.geometry import Polygon as ShapelyPolygon, Point as ShapelyPoint
+from shapely.ops import unary_union
 import jax.numpy as jnp
 
 from sim.skeleton import (
@@ -311,6 +313,890 @@ def draw_rosette_flower(ax, x: float, y: float, size: float,
         zorder=zorder + 1,
     )
     ax.add_patch(center)
+
+
+# =============================================================================
+# VORONOI CANOPY MOSAIC
+# =============================================================================
+
+
+class CellType:
+    """Cell types for Voronoi mosaic."""
+    LEAF = 'leaf'
+    FLOWER = 'flower'
+    BACKGROUND = 'background'
+
+
+def compute_canopy_boundary(
+    skeleton: SkeletonState,
+    padding: float = 0.15,
+    smooth: bool = True,
+) -> ShapelyPolygon | None:
+    """
+    Compute the canopy boundary as a Shapely polygon.
+
+    Creates an arch/dome shape based on alive tip positions.
+
+    Args:
+        skeleton: Tree skeleton
+        padding: Extra padding around tips
+        smooth: If True, use convex hull; if False, use alpha shape
+
+    Returns:
+        Shapely Polygon representing canopy boundary, or None if too few tips
+    """
+    x, y, _ = compute_segment_positions_2d(skeleton)
+    x, y = np.array(x), np.array(y)
+
+    tip_indices = get_tip_indices(skeleton.depth)
+
+    # Collect alive tip positions
+    tip_points = []
+    for tip_idx in tip_indices:
+        tip_idx = int(tip_idx)
+        if float(skeleton.alive[tip_idx]) > 0.3:
+            tip_points.append([x[tip_idx], y[tip_idx]])
+
+    if len(tip_points) < 3:
+        return None
+
+    tip_points = np.array(tip_points)
+
+    # Add trunk base point to close the shape at the bottom
+    trunk_base = np.array([[0.0, 0.0]])
+    all_points = np.vstack([tip_points, trunk_base])
+
+    # Compute convex hull
+    try:
+        hull = ConvexHull(all_points)
+        hull_points = all_points[hull.vertices]
+    except Exception:
+        return None
+
+    # Pad outward from centroid
+    centroid = hull_points.mean(axis=0)
+    padded = centroid + (hull_points - centroid) * (1 + padding)
+
+    # Create Shapely polygon
+    try:
+        boundary = ShapelyPolygon(padded)
+        if not boundary.is_valid:
+            boundary = boundary.buffer(0)  # Fix invalid geometries
+        return boundary
+    except Exception:
+        return None
+
+
+def compute_bounded_voronoi(
+    seed_points: np.ndarray,
+    boundary: ShapelyPolygon,
+    extend_factor: float = 2.0,
+) -> list[tuple[np.ndarray, int]]:
+    """
+    Compute Voronoi cells clipped to a boundary polygon.
+
+    Args:
+        seed_points: Nx2 array of seed points
+        boundary: Shapely Polygon to clip cells to
+        extend_factor: How far to extend infinite Voronoi edges
+
+    Returns:
+        List of (vertices, seed_index) tuples for each valid cell
+    """
+    if len(seed_points) < 3:
+        return []
+
+    # Add boundary points to help with edge cases
+    bounds = boundary.bounds  # (minx, miny, maxx, maxy)
+    width = bounds[2] - bounds[0]
+    height = bounds[3] - bounds[1]
+    cx, cy = (bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2
+
+    # Add far-away dummy points to bound infinite regions
+    far = max(width, height) * extend_factor
+    dummy_points = np.array([
+        [cx - far, cy - far],
+        [cx + far, cy - far],
+        [cx - far, cy + far],
+        [cx + far, cy + far],
+    ])
+    all_points = np.vstack([seed_points, dummy_points])
+
+    # Compute Voronoi
+    try:
+        vor = Voronoi(all_points)
+    except Exception:
+        return []
+
+    cells = []
+    for i, region_idx in enumerate(vor.point_region):
+        if i >= len(seed_points):  # Skip dummy points
+            continue
+
+        region = vor.regions[region_idx]
+        if -1 in region or len(region) < 3:  # Skip infinite or degenerate regions
+            continue
+
+        # Get vertices
+        verts = vor.vertices[region]
+
+        # Create Shapely polygon for this cell
+        try:
+            cell_poly = ShapelyPolygon(verts)
+            if not cell_poly.is_valid:
+                cell_poly = cell_poly.buffer(0)
+
+            # Clip to boundary
+            clipped = cell_poly.intersection(boundary)
+
+            if clipped.is_empty or clipped.area < 1e-6:
+                continue
+
+            # Handle MultiPolygon (take largest piece)
+            if clipped.geom_type == 'MultiPolygon':
+                clipped = max(clipped.geoms, key=lambda g: g.area)
+
+            if clipped.geom_type != 'Polygon':
+                continue
+
+            # Extract coordinates
+            coords = np.array(clipped.exterior.coords)
+            cells.append((coords, i))
+
+        except Exception:
+            continue
+
+    return cells
+
+
+def assign_cell_types(
+    cells: list[tuple[np.ndarray, int]],
+    seed_points: np.ndarray,
+    skeleton: SkeletonState,
+    flower_fraction: float = 0.08,
+    background_fraction: float = 0.15,
+    seed: int = 42,
+) -> list[tuple[np.ndarray, str, int]]:
+    """
+    Assign types (leaf, flower, background) to Voronoi cells.
+
+    Args:
+        cells: List of (vertices, seed_index) tuples
+        seed_points: Original seed points
+        skeleton: Tree skeleton (for flower area info)
+        flower_fraction: Fraction of cells that should be flowers
+        background_fraction: Fraction of cells that should be background
+        seed: Random seed
+
+    Returns:
+        List of (vertices, cell_type, color_index) tuples
+    """
+    np.random.seed(seed)
+
+    # Get tip positions and flower areas for reference
+    x, y, _ = compute_segment_positions_2d(skeleton)
+    x, y = np.array(x), np.array(y)
+    tip_indices = get_tip_indices(skeleton.depth)
+
+    tip_positions = []
+    tip_flower_areas = []
+    for tip_idx in tip_indices:
+        tip_idx = int(tip_idx)
+        if float(skeleton.alive[tip_idx]) > 0.3:
+            tip_positions.append([x[tip_idx], y[tip_idx]])
+            tip_flower_areas.append(float(skeleton.flower_area[tip_idx]))
+
+    tip_positions = np.array(tip_positions) if tip_positions else np.array([]).reshape(0, 2)
+    tip_flower_areas = np.array(tip_flower_areas) if tip_flower_areas else np.array([])
+
+    # Assign types
+    n_cells = len(cells)
+    n_flowers = max(1, int(n_cells * flower_fraction))
+    n_background = max(1, int(n_cells * background_fraction))
+
+    # Shuffle indices for random assignment
+    indices = np.arange(n_cells)
+    np.random.shuffle(indices)
+
+    # Cells closer to high-flower tips are more likely to be flowers
+    flower_scores = np.zeros(n_cells)
+    if len(tip_positions) > 0 and len(tip_flower_areas) > 0:
+        for i, (verts, seed_idx) in enumerate(cells):
+            centroid = verts.mean(axis=0)
+            # Find closest tip
+            dists = np.linalg.norm(tip_positions - centroid, axis=1)
+            closest_idx = np.argmin(dists)
+            # Score based on flower area of closest tip
+            flower_scores[i] = tip_flower_areas[closest_idx] / (dists[closest_idx] + 0.1)
+
+    # Sort by flower score for flower assignment
+    flower_priority = np.argsort(-flower_scores)
+
+    typed_cells = []
+    flower_set = set(flower_priority[:n_flowers])
+    background_set = set(indices[:n_background]) - flower_set
+
+    for i, (verts, seed_idx) in enumerate(cells):
+        if i in flower_set:
+            cell_type = CellType.FLOWER
+        elif i in background_set:
+            cell_type = CellType.BACKGROUND
+        else:
+            cell_type = CellType.LEAF
+
+        color_idx = np.random.randint(0, 100)
+        typed_cells.append((verts, cell_type, color_idx))
+
+    return typed_cells
+
+
+def draw_voronoi_canopy(
+    ax,
+    typed_cells: list[tuple[np.ndarray, str, int]],
+    leaf_colors: list[str] = None,
+    flower_colors: list[str] = None,
+    background_colors: list[str] = None,
+    lead_color: str = '#1a1a1a',
+    lead_width: float = 2.0,
+    draw_veins: bool = True,
+):
+    """
+    Draw Voronoi cells as stained-glass panes.
+
+    Each cell is a colored polygon with thick lead-came outline.
+
+    Args:
+        ax: Matplotlib axes
+        typed_cells: List of (vertices, cell_type, color_index) tuples
+        leaf_colors: Colors for leaf cells
+        flower_colors: Colors for flower cells
+        background_colors: Colors for background cells
+        lead_color: Color for cell outlines (lead came)
+        lead_width: Width of outlines
+        draw_veins: Draw center veins on leaf cells
+    """
+    if leaf_colors is None:
+        leaf_colors = ['#C0392B', '#E74C3C', '#27AE60', '#2ECC71',
+                       '#F39C12', '#E67E22', '#D35400', '#16A085']
+    if flower_colors is None:
+        flower_colors = ['#FF6B6B', '#FF8E8E', '#E74C3C', '#FF7675', '#D63031']
+    if background_colors is None:
+        background_colors = ['#FFF8DC', '#FFEFD5', '#FFE4B5', '#F5DEB3']
+
+    for verts, cell_type, color_idx in typed_cells:
+        # Select color based on type
+        if cell_type == CellType.LEAF:
+            color = leaf_colors[color_idx % len(leaf_colors)]
+            zorder = 10
+            alpha = 0.9
+        elif cell_type == CellType.FLOWER:
+            color = flower_colors[color_idx % len(flower_colors)]
+            zorder = 9  # Slightly below leaves
+            alpha = 0.95
+        else:  # BACKGROUND
+            color = background_colors[color_idx % len(background_colors)]
+            zorder = 8
+            alpha = 0.7
+
+        # Draw cell as polygon
+        cell_patch = Polygon(
+            verts,
+            facecolor=color,
+            edgecolor=lead_color,
+            linewidth=lead_width,
+            alpha=alpha,
+            zorder=zorder,
+        )
+        ax.add_patch(cell_patch)
+
+        # Add vein line for leaf cells
+        if draw_veins and cell_type == CellType.LEAF:
+            centroid = verts.mean(axis=0)
+            # Find longest axis of cell for vein direction
+            dists = np.linalg.norm(verts - centroid, axis=1)
+            max_idx = np.argmax(dists)
+            direction = verts[max_idx] - centroid
+            direction = direction / (np.linalg.norm(direction) + 1e-6)
+
+            # Draw short vein line
+            vein_len = dists[max_idx] * 0.5
+            ax.plot(
+                [centroid[0] - direction[0] * vein_len * 0.3,
+                 centroid[0] + direction[0] * vein_len * 0.5],
+                [centroid[1] - direction[1] * vein_len * 0.3,
+                 centroid[1] + direction[1] * vein_len * 0.5],
+                color='#1a1a1a',
+                linewidth=0.8,
+                alpha=0.3,
+                zorder=zorder + 1,
+            )
+
+        # Add center detail for flower cells
+        if cell_type == CellType.FLOWER:
+            centroid = verts.mean(axis=0)
+            # Small yellow center
+            center = mpatches.Circle(
+                centroid,
+                radius=0.015,
+                facecolor='#FFE66D',
+                edgecolor='#D35400',
+                linewidth=0.5,
+                zorder=zorder + 1,
+            )
+            ax.add_patch(center)
+
+
+def render_stained_glass_voronoi(
+    skeleton: SkeletonState,
+    ax=None,
+    figsize: tuple = (12, 14),
+    cell_density: int = 120,
+    min_cell_distance: float = 0.06,
+    flower_fraction: float = 0.08,
+    background_fraction: float = 0.12,
+    leaf_palette: list[str] = None,
+    show_background_panels: bool = True,
+    show_ground: bool = True,
+    title: str = "",
+    seed: int = 42,
+):
+    """
+    Render tree with Voronoi-filled canopy hull.
+
+    WARNING: This fills the entire convex hull with cells, hiding the tree
+    structure. Use render_stained_glass_natural() for a tree that looks
+    like a tree.
+
+    Args:
+        skeleton: SkeletonState to render
+        ax: Matplotlib axes (creates new if None)
+        figsize: Figure size if creating new
+        cell_density: Target number of cells in canopy
+        min_cell_distance: Minimum distance between cell seeds
+        flower_fraction: Fraction of cells that are flowers
+        background_fraction: Fraction of cells that are background (gaps)
+        leaf_palette: Colors for leaf cells
+        show_background_panels: Draw radial background panels
+        show_ground: Draw ground segments
+        title: Plot title
+        seed: Random seed
+
+    Returns:
+        Matplotlib axes
+    """
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+
+    np.random.seed(seed)
+    ax.set_facecolor('#FFF8DC')
+
+    # Get positions
+    x, y, _ = compute_segment_positions_2d(skeleton)
+    x, y = np.array(x), np.array(y)
+
+    # Set axis limits
+    x_margin = 0.5
+    y_margin = 0.3
+    x_min, x_max = x.min() - x_margin, x.max() + x_margin
+    y_max = y.max() + y_margin
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(-0.5, y_max)
+
+    # 1. Background panels
+    if show_background_panels:
+        draw_background_panels(ax, style='radial', num_panels=12)
+
+    # 2. Ground
+    if show_ground:
+        draw_ground(ax)
+
+    # 3. Branches (lead-came style)
+    draw_branches_lead_came(ax, skeleton)
+
+    # 4. Voronoi canopy
+    boundary = compute_canopy_boundary(skeleton, padding=0.2)
+
+    if boundary is not None:
+        # Sample seed points inside boundary
+        hull_points = np.array(boundary.exterior.coords)
+        seed_points = poisson_disk_sample(
+            hull_points,
+            num_samples=cell_density,
+            min_distance=min_cell_distance,
+            seed=seed,
+        )
+
+        if len(seed_points) >= 3:
+            # Compute Voronoi cells
+            cells = compute_bounded_voronoi(seed_points, boundary)
+
+            # Assign types
+            typed_cells = assign_cell_types(
+                cells, seed_points, skeleton,
+                flower_fraction=flower_fraction,
+                background_fraction=background_fraction,
+                seed=seed,
+            )
+
+            # Draw canopy
+            draw_voronoi_canopy(
+                ax, typed_cells,
+                leaf_colors=leaf_palette,
+                draw_veins=True,
+            )
+
+    ax.set_aspect('equal')
+    ax.axis('off')
+
+    if title:
+        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+
+    return ax
+
+
+# =============================================================================
+# NATURAL TREE RENDERING (visible structure + tip leaves)
+# =============================================================================
+
+
+def generate_leaf_silhouette(
+    tip_x: float,
+    tip_y: float,
+    length: float,
+    width: float,
+    angle: float,
+    num_points: int = 12,
+    asymmetry: float = 0.1,
+    tip_sharpness: float = 0.3,
+    base_width: float = 0.3,
+    seed: int = 0,
+) -> np.ndarray:
+    """
+    Generate a natural leaf silhouette (pointed tip, rounded middle, narrower base).
+
+    The leaf shape is created using a parametric curve that mimics real leaf forms:
+    - Pointed tip at the "front"
+    - Widest in the upper-middle section
+    - Narrower at the base (petiole attachment)
+
+    Args:
+        tip_x, tip_y: Position of leaf TIP (not center)
+        length: Length from base to tip
+        width: Maximum width of leaf
+        angle: Direction the leaf points (tip direction) in radians
+        num_points: Number of vertices per side
+        asymmetry: Random left/right variation (0-0.3)
+        tip_sharpness: How pointed the tip is (0.1-0.5, lower = sharper)
+        base_width: Width at base relative to max width (0.2-0.5)
+        seed: Random seed
+
+    Returns:
+        Nx2 array of polygon vertices forming leaf outline
+    """
+    np.random.seed(seed)
+
+    # Parameter t goes from 0 (base) to 1 (tip)
+    t = np.linspace(0, 1, num_points)
+
+    # Width profile: starts narrow, widens, then narrows to tip
+    # Use a modified sine curve that peaks around t=0.4-0.5
+    # w(t) = sin(pi * t^0.7) gives a nice leaf shape
+    width_profile = np.sin(np.pi * (t ** 0.7))
+
+    # Modify base to be narrower
+    base_taper = base_width + (1 - base_width) * t ** 0.5
+    width_profile = width_profile * base_taper
+
+    # Sharpen the tip
+    tip_taper = 1 - (1 - tip_sharpness) * (t ** 2)
+    width_profile = width_profile * tip_taper
+
+    # Normalize so max is 1
+    width_profile = width_profile / (width_profile.max() + 1e-6)
+
+    # Add asymmetry (slight random variation)
+    left_variation = 1 + np.random.uniform(-asymmetry, asymmetry, num_points)
+    right_variation = 1 + np.random.uniform(-asymmetry, asymmetry, num_points)
+
+    # Build left and right edges
+    half_widths_left = width * 0.5 * width_profile * left_variation
+    half_widths_right = width * 0.5 * width_profile * right_variation
+
+    # Position along leaf axis (base to tip)
+    along_axis = t * length
+
+    # Convert to coordinates (leaf points in +angle direction)
+    cos_a, sin_a = np.cos(angle), np.sin(angle)
+    # Perpendicular direction
+    cos_perp, sin_perp = np.cos(angle + np.pi/2), np.sin(angle + np.pi/2)
+
+    # Base position (tip minus length in angle direction)
+    base_x = tip_x - length * cos_a
+    base_y = tip_y - length * sin_a
+
+    # Left edge (going from base to tip)
+    left_x = base_x + along_axis * cos_a + half_widths_left * cos_perp
+    left_y = base_y + along_axis * sin_a + half_widths_left * sin_perp
+
+    # Right edge (going from tip back to base, for closed polygon)
+    right_x = base_x + along_axis * cos_a - half_widths_right * cos_perp
+    right_y = base_y + along_axis * sin_a - half_widths_right * sin_perp
+
+    # Combine: left edge (base to tip) + right edge (tip to base)
+    all_x = np.concatenate([left_x, right_x[::-1]])
+    all_y = np.concatenate([left_y, right_y[::-1]])
+
+    return np.column_stack([all_x, all_y])
+
+
+def generate_leaf_polygon(
+    center_x: float,
+    center_y: float,
+    size: float,
+    angle: float,
+    num_vertices: int = 7,
+    irregularity: float = 0.3,
+    seed: int = 0,
+) -> np.ndarray:
+    """
+    Generate an irregular polygon leaf shape (LEGACY - use generate_leaf_silhouette).
+
+    Creates organic-looking leaf shapes that aren't perfect ellipses.
+    """
+    np.random.seed(seed)
+    base_angles = np.linspace(0, 2 * np.pi, num_vertices, endpoint=False)
+    angle_noise = np.random.uniform(-irregularity, irregularity, num_vertices)
+    angles = base_angles + angle_noise
+
+    radii = []
+    for a in angles:
+        rel_angle = a - angle
+        r = size * (0.4 + 0.6 * np.abs(np.sin(rel_angle)))
+        r *= (1 + np.random.uniform(-irregularity * 0.5, irregularity * 0.5))
+        radii.append(r)
+
+    radii = np.array(radii)
+    verts_x = center_x + radii * np.cos(angles)
+    verts_y = center_y + radii * np.sin(angles)
+
+    return np.column_stack([verts_x, verts_y])
+
+
+def draw_natural_leaf(
+    ax,
+    vertices: np.ndarray,
+    fill_color: str,
+    base_point: tuple[float, float],
+    tip_point: tuple[float, float],
+    edge_color: str = '#1a1a1a',
+    edge_width: float = 1.5,
+    draw_vein: bool = True,
+    draw_variegation: bool = True,
+    vein_color: str = '#1a1a1a',
+    vein_alpha: float = 0.5,
+    zorder: int = 10,
+    seed: int = 0,
+):
+    """
+    Draw a natural leaf with proper vein and optional variegation.
+
+    Args:
+        ax: Matplotlib axes
+        vertices: Nx2 array of polygon vertices
+        fill_color: Main leaf fill color
+        base_point: (x, y) of leaf base (petiole attachment)
+        tip_point: (x, y) of leaf tip
+        edge_color: Edge/outline color (lead came)
+        edge_width: Outline width
+        draw_vein: Whether to draw center vein
+        draw_variegation: Whether to draw inner color stripe
+        vein_color: Vein line color
+        vein_alpha: Vein transparency
+        zorder: Drawing order
+        seed: Random seed for variegation color
+    """
+    np.random.seed(seed)
+
+    # Draw main leaf polygon
+    leaf = Polygon(
+        vertices,
+        facecolor=fill_color,
+        edgecolor=edge_color,
+        linewidth=edge_width,
+        zorder=zorder,
+    )
+    ax.add_patch(leaf)
+
+    # Draw variegation (inner stripe) - coleus style
+    if draw_variegation:
+        # Inner colors for variegation
+        inner_colors = ['#2ECC71', '#F1C40F', '#E74C3C', '#9B59B6',
+                        '#3498DB', '#1ABC9C', '#E67E22']
+        inner_color = inner_colors[seed % len(inner_colors)]
+
+        # Create smaller inner leaf shape
+        centroid = vertices.mean(axis=0)
+        inner_verts = centroid + 0.4 * (vertices - centroid)
+
+        inner_leaf = Polygon(
+            inner_verts,
+            facecolor=inner_color,
+            edgecolor='none',
+            alpha=0.6,
+            zorder=zorder + 0.5,
+        )
+        ax.add_patch(inner_leaf)
+
+    # Draw center vein (from base toward tip)
+    if draw_vein:
+        base_x, base_y = base_point
+        tip_x, tip_y = tip_point
+
+        # Vein goes from 20% from base to 85% toward tip
+        vein_start_x = base_x + 0.2 * (tip_x - base_x)
+        vein_start_y = base_y + 0.2 * (tip_y - base_y)
+        vein_end_x = base_x + 0.85 * (tip_x - base_x)
+        vein_end_y = base_y + 0.85 * (tip_y - base_y)
+
+        ax.plot(
+            [vein_start_x, vein_end_x],
+            [vein_start_y, vein_end_y],
+            color=vein_color,
+            linewidth=1.0,
+            alpha=vein_alpha,
+            zorder=zorder + 1,
+        )
+
+
+def draw_polygon_leaf(
+    ax,
+    vertices: np.ndarray,
+    fill_color: str,
+    edge_color: str = '#1a1a1a',
+    edge_width: float = 1.5,
+    draw_vein: bool = True,
+    vein_color: str = '#1a1a1a',
+    vein_alpha: float = 0.4,
+    zorder: int = 10,
+):
+    """
+    Draw a polygon-shaped leaf (LEGACY - use draw_natural_leaf for silhouettes).
+    """
+    leaf = Polygon(
+        vertices,
+        facecolor=fill_color,
+        edgecolor=edge_color,
+        linewidth=edge_width,
+        zorder=zorder,
+    )
+    ax.add_patch(leaf)
+
+    if draw_vein:
+        centroid = vertices.mean(axis=0)
+        dists = np.linalg.norm(vertices - centroid, axis=1)
+        sorted_idx = np.argsort(dists)
+        far1 = vertices[sorted_idx[-1]]
+
+        direction = far1 - centroid
+        direction = direction / (np.linalg.norm(direction) + 1e-6)
+        vein_len = dists[sorted_idx[-1]] * 0.6
+
+        ax.plot(
+            [centroid[0] - direction[0] * vein_len * 0.2,
+             centroid[0] + direction[0] * vein_len * 0.7],
+            [centroid[1] - direction[1] * vein_len * 0.2,
+             centroid[1] + direction[1] * vein_len * 0.7],
+            color=vein_color,
+            linewidth=0.8,
+            alpha=vein_alpha,
+            zorder=zorder + 1,
+        )
+
+
+def render_stained_glass_natural(
+    skeleton: SkeletonState,
+    ax=None,
+    figsize: tuple = (12, 14),
+    leaf_size: float = 0.12,
+    leaf_colors: list[str] = None,
+    flower_colors: list[str] = None,
+    show_background: bool = True,
+    show_ground: bool = True,
+    title: str = "",
+    seed: int = 42,
+):
+    """
+    Render tree with visible branch structure and polygon leaves at tips.
+
+    This approach maintains the tree's form:
+    - Branches are clearly visible as the skeleton
+    - Leaves are polygon shapes attached at tips
+    - Flowers are small rosettes near tips
+    - You can see through the canopy
+
+    This looks like the inspirational stained-glass tree image.
+
+    Args:
+        skeleton: SkeletonState to render
+        ax: Matplotlib axes (creates new if None)
+        figsize: Figure size if creating new
+        leaf_size: Base size for leaves
+        leaf_colors: Color palette for leaves
+        flower_colors: Color palette for flowers
+        show_background: Draw background panels
+        show_ground: Draw ground segments
+        title: Plot title
+        seed: Random seed
+
+    Returns:
+        Matplotlib axes
+    """
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+
+    np.random.seed(seed)
+    ax.set_facecolor('#FFF8DC')
+
+    if leaf_colors is None:
+        leaf_colors = ['#C0392B', '#E74C3C', '#27AE60', '#2ECC71',
+                       '#F39C12', '#E67E22', '#D35400', '#16A085',
+                       '#1ABC9C', '#9B59B6']
+    if flower_colors is None:
+        flower_colors = ['#FF6B6B', '#FF8E8E', '#E74C3C', '#FF7675']
+
+    # Get positions
+    x, y, _ = compute_segment_positions_2d(skeleton)
+    x, y = np.array(x), np.array(y)
+
+    # Set axis limits
+    x_margin = 0.5
+    y_margin = 0.3
+    x_min, x_max = x.min() - x_margin, x.max() + x_margin
+    y_max = y.max() + y_margin
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(-0.5, y_max)
+
+    # 1. Background panels
+    if show_background:
+        draw_background_panels(ax, style='radial', num_panels=12)
+
+    # 2. Ground
+    if show_ground:
+        draw_ground(ax)
+
+    # 3. Branches (lead-came style) - drawn FIRST so leaves appear on top
+    draw_branches_lead_came(ax, skeleton)
+
+    # 4. Leaves at tips - proper leaf silhouettes
+    tip_indices = get_tip_indices(skeleton.depth)
+
+    for i, tip_idx in enumerate(tip_indices):
+        tip_idx = int(tip_idx)
+        alive = float(skeleton.alive[tip_idx])
+        leaf_area = float(skeleton.leaf_area[tip_idx])
+
+        if alive < 0.3 or leaf_area < 0.05:
+            continue
+
+        # Get branch tip position
+        branch_tip_x, branch_tip_y = x[tip_idx], y[tip_idx]
+
+        # Get parent position for leaf direction
+        parent_idx = (tip_idx - 1) // 2 if tip_idx > 0 else 0
+        parent_x, parent_y = x[parent_idx], y[parent_idx]
+
+        # Leaf points OUTWARD from branch (away from parent)
+        branch_dir_x = branch_tip_x - parent_x
+        branch_dir_y = branch_tip_y - parent_y
+        branch_len = np.sqrt(branch_dir_x**2 + branch_dir_y**2) + 1e-6
+
+        # Normalize branch direction
+        dir_x = branch_dir_x / branch_len
+        dir_y = branch_dir_y / branch_len
+
+        # Leaf angle follows branch direction
+        leaf_angle = np.arctan2(dir_y, dir_x)
+
+        # Leaf dimensions based on leaf_area
+        length = leaf_size * (0.8 + 0.6 * np.sqrt(leaf_area))
+        width = length * (0.4 + 0.2 * np.random.random())  # Aspect ratio 2:1 to 3:1
+
+        # Leaf tip position (offset from branch tip in leaf direction)
+        leaf_tip_x = branch_tip_x + length * 0.6 * dir_x
+        leaf_tip_y = branch_tip_y + length * 0.6 * dir_y
+
+        # Generate leaf silhouette
+        vertices = generate_leaf_silhouette(
+            tip_x=leaf_tip_x,
+            tip_y=leaf_tip_y,
+            length=length,
+            width=width,
+            angle=leaf_angle,
+            num_points=10,
+            asymmetry=0.12,
+            tip_sharpness=0.25,
+            base_width=0.25,
+            seed=i + seed,
+        )
+
+        # Compute base point for vein drawing
+        base_x = leaf_tip_x - length * np.cos(leaf_angle)
+        base_y = leaf_tip_y - length * np.sin(leaf_angle)
+
+        # Pick color
+        color = leaf_colors[i % len(leaf_colors)]
+
+        draw_natural_leaf(
+            ax, vertices,
+            fill_color=color,
+            base_point=(base_x, base_y),
+            tip_point=(leaf_tip_x, leaf_tip_y),
+            draw_vein=True,
+            draw_variegation=True,
+            zorder=10,
+            seed=i + seed,
+        )
+
+    # 5. Flowers (small rosettes, sparse)
+    flower_candidates = []
+    for i, tip_idx in enumerate(tip_indices):
+        tip_idx = int(tip_idx)
+        flower_area = float(skeleton.flower_area[tip_idx])
+        alive = float(skeleton.alive[tip_idx])
+
+        if flower_area > 0.05 and alive > 0.3:
+            flower_candidates.append((i, tip_idx, flower_area))
+
+    # Take top flowers by area
+    flower_candidates.sort(key=lambda f: f[2], reverse=True)
+    max_flowers = min(len(flower_candidates), max(3, len(tip_indices) // 8))
+    flower_candidates = flower_candidates[:max_flowers]
+
+    for i, tip_idx, flower_area in flower_candidates:
+        tip_x, tip_y = x[tip_idx], y[tip_idx]
+
+        # Offset slightly from leaf
+        offset = leaf_size * 0.3
+        flower_x = tip_x + offset * np.cos(i * 1.3)
+        flower_y = tip_y + offset * np.sin(i * 1.3) + offset * 0.5
+
+        flower_size = 0.03 + 0.02 * np.sqrt(flower_area)
+
+        draw_rosette_flower(
+            ax, flower_x, flower_y,
+            size=min(flower_size, 0.045),
+            num_petals=np.random.choice([6, 8]),
+            color=flower_colors[i % len(flower_colors)],
+            zorder=11,
+        )
+
+    ax.set_aspect('equal')
+    ax.axis('off')
+
+    if title:
+        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+
+    return ax
 
 
 # =============================================================================
