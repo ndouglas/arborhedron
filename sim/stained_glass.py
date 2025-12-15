@@ -2392,9 +2392,20 @@ def render_shoot_composition(
             data = elem.data
             blossom = data['blossom']
 
-            # Branch strokes
+            # Branch strokes - stop at blossom edge, not center
+            branch_base = data['branch_base']
+            branch_tip = data['branch_tip']
+            # Shorten to stop at blossom base_radius
+            branch_vec = branch_tip - branch_base
+            branch_len = np.linalg.norm(branch_vec)
+            if branch_len > blossom.base_radius:
+                # Stop at the edge of the blossom
+                shortened_tip = branch_tip - (branch_vec / branch_len) * blossom.base_radius
+            else:
+                shortened_tip = branch_base  # Branch too short, skip stroke
+
             draw_branch_ribbon(
-                ax, data['branch_base'], data['branch_tip'],
+                ax, branch_base, shortened_tip,
                 style.branch_w0, style.branch_w1,
                 fill_color='none',
                 stroke_color=style.lead_color,
