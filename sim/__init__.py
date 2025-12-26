@@ -11,7 +11,7 @@ Modules:
     dynamics: State update logic
     policies: Allocation policies (hand-coded baseline, learned)
     rollout: Full season simulation
-    stained_glass: Stained glass visualization renderer
+    stained_glass: L-system tree with stained glass leaf panels
 """
 
 from sim.config import Allocation, ClimateConfig, SimConfig, StressParams, TreeState
@@ -23,22 +23,24 @@ from sim.policies import (
 )
 from sim.rollout import Trajectory, run_season
 from sim.stained_glass import (
-    BlossomGeom,
-    BlossomStyle,
     LeafGeom,
-    LeafStyle,
-    ShootGeom,
-    ShootStyle,
-    StressProfile,
-    make_blossom,
+    TreeParams,
+    TreeStyle,
+    TreeSkeleton,
+    Branch,
     make_leaf,
-    make_shoot,
-    render_blossom,
-    render_leaf,
-    render_shoot_scene,
+    generate_tree_skeleton,
+    render_tree,
+    save_tree,
     render_stained_glass,
-    save_shoot_scene,
     save_stained_glass,
+    # Stress integration
+    StressVisuals,
+    compute_stress_visuals,
+    stress_to_params,
+    stress_to_style,
+    render_stressed_tree,
+    save_stressed_tree,
 )
 
 __all__ = [
@@ -56,26 +58,24 @@ __all__ = [
     # Simulation
     "Trajectory",
     "run_season",
-    # Stained glass geometry
-    "BlossomGeom",
+    # Tree generation
+    "Branch",
     "LeafGeom",
-    "ShootGeom",
-    # Stained glass styles
-    "BlossomStyle",
-    "LeafStyle",
-    "ShootStyle",
-    # Stress system
-    "StressProfile",
-    # Factory functions
-    "make_blossom",
+    "TreeParams",
+    "TreeSkeleton",
+    "TreeStyle",
+    "generate_tree_skeleton",
     "make_leaf",
-    "make_shoot",
     # Rendering
-    "render_blossom",
-    "render_leaf",
-    "render_shoot_scene",
     "render_stained_glass",
-    # Save utilities
-    "save_shoot_scene",
+    "render_tree",
     "save_stained_glass",
+    "save_tree",
+    # Stress-morphology integration
+    "StressVisuals",
+    "compute_stress_visuals",
+    "stress_to_params",
+    "stress_to_style",
+    "render_stressed_tree",
+    "save_stressed_tree",
 ]
