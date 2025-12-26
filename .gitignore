@@ -55,3 +55,6 @@ tesseract_cache/
 
 # Logs
 *.log
+
+# Jupyter
+.ipynb_checkpoints/

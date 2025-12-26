@@ -87,6 +87,34 @@ L-system tree rendering with stained-glass style leaves and blossoms.
 
 ![Tree Gallery](notebooks/tree_gallery.png)
 
+## Key Results
+
+### Carbon vs Reproduction Tradeoff
+
+Neural policies trained for different objectives reveal a fundamental tradeoff:
+
+| Policy | Carbon Integral | Seeds Produced |
+|--------|-----------------|----------------|
+| **Carbon-Optimized** | 66.44 | 0.00 |
+| **Seed-Optimized** | 49.02 | 1.63 |
+
+The carbon-optimized policy achieves **35% more carbon sequestration** by investing heavily in trunk wood, but produces zero seeds. This mirrors real forestry decisions between fast-growing species (more seeds, less durable wood) and slow-growing hardwoods (fewer seeds, centuries of carbon storage).
+
+![Carbon vs Seed Tradeoff](notebooks/carbon_seed_tradeoff.png)
+
+### Fitness Landscape & Tipping Points
+
+2D parameter sweeps reveal where trees can survive and where they fail:
+
+![Fitness Landscape](notebooks/fitness_landscape.png)
+
+The fitness landscape shows:
+- **Viable region**: High moisture, low wind (green area)
+- **Collapse zones**: Low moisture or high wind causes fitness to drop sharply
+- **Tipping points**: Boundaries where small environmental changes cause large fitness losses
+
+These resilience boundaries help identify which ecosystems are most vulnerable to climate change.
+
 ## Installation
 
 ```bash
