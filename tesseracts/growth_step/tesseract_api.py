@@ -67,17 +67,8 @@ class OutputSchema(BaseModel):
 
 
 #
-# Core simulation logic (imported from sim module)
+# Core simulation logic (imported from local sim module copy)
 #
-
-# Import the actual dynamics - this is where the JAX computation lives
-import sys
-import os
-
-# Add project root to path for imports
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
 
 from sim.config import Allocation, SimConfig, TreeState
 from sim.dynamics import step as dynamics_step

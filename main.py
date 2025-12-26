@@ -119,8 +119,8 @@ def run_season_manual(
         # Accumulate fruit
         fruit_integral = fruit_integral + state["fruit"]
 
-        # Progress indicator
-        if day % 25 == 0:
+        # Progress indicator (every 25% of season)
+        if day % max(1, num_days // 4) == 0:
             print(f"  Day {day}: energy={float(state['energy']):.2f}, "
                   f"leaves={float(state['leaves']):.2f}, "
                   f"flowers={float(state['flowers']):.2f}")
@@ -255,6 +255,10 @@ def main() -> None:
     print("  ARBORHEDRON: Differentiable Tree Growth Pipeline")
     print("=" * 60)
 
+    # Number of days for demo (reduce for faster runs)
+    # Full simulation uses 100 days, but each HTTP call adds overhead
+    NUM_DAYS = 20  # Increase to 100 for full simulation
+
     # Load Tesseracts
     growth_step = Tesseract.from_image("growth_step")
     neural_policy = Tesseract.from_image("neural_policy")
@@ -267,23 +271,23 @@ def main() -> None:
 
         # PATH 1: Manual Tesseract calls (for debugging)
         print("\n" + "=" * 60)
-        print("PATH 1: Season Simulation via Tesseract SDK")
+        print(f"PATH 1: Season Simulation via Tesseract SDK ({NUM_DAYS} days)")
         print("=" * 60)
         result = run_season_manual(
             growth_step, neural_policy, seed_production,
-            policy_weights, num_days=100
+            policy_weights, num_days=NUM_DAYS
         )
 
         # PATH 2: Differentiable composition with Tesseract-JAX
         print("\n" + "=" * 60)
-        print("PATH 2: Differentiable Pipeline via Tesseract-JAX")
+        print(f"PATH 2: Differentiable Pipeline via Tesseract-JAX ({NUM_DAYS} days)")
         print("=" * 60)
 
         # Define loss function (negative seeds for minimization)
         def loss_fn(weights: dict) -> Array:
             seeds = run_season_jax(
                 growth_step, neural_policy, seed_production,
-                weights, num_days=100
+                weights, num_days=NUM_DAYS
             )
             return -seeds  # Negative because we want to maximize seeds
 
@@ -309,7 +313,7 @@ def main() -> None:
         # Evaluate updated policy
         new_seeds = run_season_jax(
             growth_step, neural_policy, seed_production,
-            updated_weights, num_days=100
+            updated_weights, num_days=NUM_DAYS
         )
         print(f"Seeds after update: {float(new_seeds):.3f}")
         print(f"Improvement: {float(new_seeds - result['seeds']):.3f}")

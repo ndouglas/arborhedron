@@ -8,6 +8,11 @@ description: "Differentiable single-day tree growth step. Takes current state an
 build_config:
   target_platform: "native"
 
-  # Copy the sim module into the container
+  # Copy the local sim module into the container
   package_data:
     - [sim, sim]
+
+  # Fix permissions on copied files
+  custom_build_steps:
+    - |
+      RUN chmod -R 755 /tesseract/sim
