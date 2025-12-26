@@ -3,7 +3,7 @@
 [![CI](https://github.com/ndouglas/arborhedron/actions/workflows/ci.yml/badge.svg)](https://github.com/ndouglas/arborhedron/actions/workflows/ci.yml)
 [![Tesseract Build](https://github.com/ndouglas/arborhedron/actions/workflows/tesseract-build.yml/badge.svg)](https://github.com/ndouglas/arborhedron/actions/workflows/tesseract-build.yml)
 
-**Differentiable tree growth simulation with learned resource allocation**
+**Differentiable tree growth simulation for climate-resilient reforestation planning**
 
 A submission for the [Tesseract Hackathon 2025](https://pasteurlabs.ai/tesseract-hackathon-2025/).
 
@@ -11,15 +11,27 @@ A submission for the [Tesseract Hackathon 2025](https://pasteurlabs.ai/tesseract
 
 ## What This Is
 
-A differentiable simulation of tree growth over a growing season, where:
+A fully differentiable simulation of tree growth that enables gradient-based optimization of resource allocation strategies for climate objectives. The inverse problem: *given environmental conditions, what allocation policy maximizes carbon sequestration while maintaining survival under stress?*
 
-- A **tree state** (energy, water, nutrients, roots, trunk, shoots, leaves, flowers, fruit) evolves over ~100 days
-- **Environmental stress** (light, moisture, wind) varies sinusoidally
-- A **neural network policy** decides how to allocate resources each day
-- **Fitness** is measured by seed production at season's end
-- Gradients flow end-to-end, enabling policy optimization via gradient descent
+Key capabilities:
 
-The simulation is decomposed into composable **Tesseracts** that can be deployed and composed via Tesseract-JAX.
+- **Tree growth dynamics**: Energy, water, nutrients, and biomass (roots, trunk, shoots, leaves, flowers, fruit) evolve over ~100 days under environmental stress
+- **Neural allocation policy**: An MLP learns to allocate resources, optimized via gradient descent
+- **Carbon sequestration metrics**: Permanence-weighted carbon scoring that reflects long-term climate impact
+- **Resilience analysis**: Gradient-based sensitivity reveals environmental tipping points where survival collapses
+- **Tesseract composition**: Modular, deployable ML pipeline components
+
+## Climate Relevance
+
+Trees are critical for climate mitigation (carbon sequestration) and adaptation (ecosystem resilience). Effective reforestation requires understanding:
+
+1. **Carbon tradeoffs**: Trunk wood stores carbon for decades; leaves decompose within a year. How should trees allocate resources to maximize durable sequestration?
+
+2. **Tipping points**: Where do small environmental changes cause disproportionate fitness loss? What are the critical moisture/wind thresholds?
+
+3. **Policy robustness**: How do allocation strategies perform across climate scenarios?
+
+Arborhedron addresses these questions with a differentiable framework that exposes gradients for both optimization and sensitivity analysis.
 
 ## Features
 
@@ -34,7 +46,30 @@ Built with JAX, modeling:
 
 ### Neural Allocation Policy
 
-An MLP that observes tree state + environment and outputs resource allocation fractions. Trainable via gradient descent on seed production.
+An MLP that observes tree state + environment and outputs resource allocation fractions. Trainable via gradient descent on seeds, carbon, or combined objectives.
+
+### Carbon Sequestration Metrics
+
+Biomass is converted to carbon content using tissue-specific fractions, then weighted by permanence:
+
+| Tissue | Carbon Fraction | Permanence |
+|--------|-----------------|------------|
+| Trunk | 0.50 | 1.0 |
+| Roots | 0.45 | 0.7 |
+| Shoots | 0.45 | 0.3 |
+| Leaves | 0.45 | 0.1 |
+| Flowers | 0.40 | 0.05 |
+
+The permanence-weighted carbon score rewards durable carbon storage (trunk wood persists for decades; leaves decompose within a year).
+
+### Resilience & Tipping Point Analysis
+
+Tools for identifying critical environmental thresholds:
+
+- **2D parameter sweeps**: Map fitness across moisture × wind space
+- **Gradient sensitivity**: ∂fitness/∂param reveals where small changes cause large effects
+- **Tipping point detection**: Locate where gradients spike or fitness collapses
+- **Resilience boundaries**: Contours separating viable from non-viable regions
 
 ### Tesseract Composition
 
@@ -107,12 +142,16 @@ arborhedron/
 │   ├── surrogates.py       # Biological response functions
 │   ├── policies.py         # Allocation policies
 │   ├── rollout.py          # Season simulation
+│   ├── carbon.py           # Carbon sequestration metrics
+│   ├── resilience.py       # Tipping point analysis
 │   └── stained_glass.py    # Tree visualization
 ├── tesseracts/             # Tesseract definitions
 │   ├── growth_step/        # Single-day dynamics
 │   ├── neural_policy/      # Allocation policy
 │   └── seed_production/    # Fitness computation
 ├── notebooks/              # Exploration notebooks
+├── docs/                   # Technical documentation
+│   └── technical_writeup.md # Hackathon submission writeup
 ├── tests/                  # Test suite
 └── main.py                 # Tesseract composition demo
 ```

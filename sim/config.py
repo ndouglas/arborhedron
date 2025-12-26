@@ -420,3 +420,21 @@ class SimConfig:
     soil_drain_rate: float = 0.02  # Natural drainage/evaporation from soil
     # Root uptake now pulls from soil_water instead of being directly gated by moisture
     # This means: drought → low soil recharge → soil depletes → roots can't find water
+
+    # Carbon sequestration parameters
+    # Carbon content fractions (kg C per kg biomass, based on forestry literature)
+    # Wood is ~50% carbon by dry mass, other tissues slightly less
+    carbon_fraction_trunk: float = 0.50  # Wood is ~50% carbon
+    carbon_fraction_roots: float = 0.45  # Roots slightly less dense
+    carbon_fraction_shoots: float = 0.45  # Similar to roots
+    carbon_fraction_leaves: float = 0.45  # Photosynthetic tissue
+    carbon_fraction_flowers: float = 0.40  # Reproductive tissue, less carbon-dense
+
+    # Carbon permanence weights (for climate-weighted carbon score)
+    # Higher = more valuable for long-term sequestration
+    # Trunk wood persists for decades/centuries; leaves decompose within a year
+    permanence_trunk: float = 1.0  # Reference point (most permanent)
+    permanence_roots: float = 0.7  # Semi-permanent (years)
+    permanence_shoots: float = 0.3  # Seasonal branches
+    permanence_leaves: float = 0.1  # Very seasonal, will decompose
+    permanence_flowers: float = 0.05  # Ephemeral

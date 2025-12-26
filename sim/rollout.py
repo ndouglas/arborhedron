@@ -128,6 +128,32 @@ class Trajectory:
                 print(f"{key:20s}: {value:>10.3f}")
         print("=" * 40)
 
+    def get_carbon_summary(self, config: SimConfig) -> dict[str, float]:
+        """
+        Compute carbon sequestration summary metrics.
+
+        Returns comprehensive carbon statistics for the trajectory,
+        suitable for analysis and comparison across policies/climates.
+
+        Args:
+            config: Simulation configuration with carbon parameters
+
+        Returns:
+            Dictionary with carbon metrics:
+            - FinalTotalCarbon: Total carbon at end of season
+            - FinalPermanentCarbon: Permanent (trunk+roots) carbon at end
+            - FinalSeasonalCarbon: Seasonal (shoots+leaves+flowers) carbon at end
+            - FinalCarbonScore: Permanence-weighted score at end
+            - PeakTotalCarbon: Maximum total carbon during season
+            - PeakPermanentCarbon: Maximum permanent carbon during season
+            - MeanCarbonScore: Average carbon score over season
+            - CarbonIntegral: Sum of carbon scores (for optimization)
+            - TrunkCarbonFraction: Fraction of total carbon in trunk
+        """
+        from sim import carbon
+
+        return carbon.compute_carbon_summary(self.states, config)
+
 
 def run_season(
     config: SimConfig,

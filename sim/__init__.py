@@ -11,15 +11,37 @@ Modules:
     dynamics: State update logic
     policies: Allocation policies (hand-coded baseline, learned)
     rollout: Full season simulation
+    carbon: Carbon sequestration metrics
+    resilience: Tipping point and resilience analysis
     stained_glass: L-system tree with stained glass leaf panels
 """
 
+from sim.carbon import (
+    carbon_objective,
+    carbon_seed_tradeoff,
+    compute_carbon_content,
+    compute_carbon_efficiency,
+    compute_carbon_score,
+    compute_carbon_summary,
+)
 from sim.config import Allocation, ClimateConfig, SimConfig, StressParams, TreeState
 from sim.policies import (
     NeuralPolicy,
     apply_neural_policy,
     make_neural_policy_fn,
     make_policy_features,
+)
+from sim.resilience import (
+    compute_resilience_boundary,
+    compute_sensitivity,
+    find_tipping_points,
+    make_climate_with_offsets,
+    parameter_sweep_2d,
+    plot_fitness_landscape,
+    plot_resilience_boundary,
+    plot_sensitivity_curve,
+    resilience_report,
+    sensitivity_sweep,
 )
 from sim.rollout import Trajectory, run_season
 from sim.stained_glass import (
@@ -58,6 +80,24 @@ __all__ = [
     # Simulation
     "Trajectory",
     "run_season",
+    # Carbon sequestration
+    "carbon_objective",
+    "carbon_seed_tradeoff",
+    "compute_carbon_content",
+    "compute_carbon_efficiency",
+    "compute_carbon_score",
+    "compute_carbon_summary",
+    # Resilience analysis
+    "compute_resilience_boundary",
+    "compute_sensitivity",
+    "find_tipping_points",
+    "make_climate_with_offsets",
+    "parameter_sweep_2d",
+    "plot_fitness_landscape",
+    "plot_resilience_boundary",
+    "plot_sensitivity_curve",
+    "resilience_report",
+    "sensitivity_sweep",
     # Tree generation
     "Branch",
     "LeafGeom",
