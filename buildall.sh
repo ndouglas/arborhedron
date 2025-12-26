@@ -5,7 +5,7 @@
 set -e  # Exit on error
 
 echo "========================================="
-echo "Building Tesseract Hackathon Template"
+echo "Building Arborhedron Tesseracts"
 echo "========================================="
 echo ""
 

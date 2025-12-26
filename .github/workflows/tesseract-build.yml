@@ -1,0 +1,97 @@
+name: Tesseract Build
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'tesseracts/**'
+      - 'sim/**'
+      - '.github/workflows/tesseract-build.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'tesseracts/**'
+      - 'sim/**'
+      - '.github/workflows/tesseract-build.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-tesseracts:
+    name: Build Tesseracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-tesseract-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-tesseract-
+
+      - name: Install tesseract-core
+        run: |
+          python -m pip install --upgrade pip
+          pip install tesseract-core
+
+      - name: Verify tesseract CLI
+        run: |
+          tesseract --version
+          tesseract --help | grep -q "autodiff" || (echo "Wrong tesseract CLI" && exit 1)
+
+      - name: Build growth_step tesseract
+        run: tesseract build tesseracts/growth_step
+
+      - name: Build neural_policy tesseract
+        run: tesseract build tesseracts/neural_policy
+
+      - name: Build seed_production tesseract
+        run: tesseract build tesseracts/seed_production
+
+      - name: List built images
+        run: docker images | grep -E "(growth_step|neural_policy|seed_production)"
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: build-tesseracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Rebuild Tesseracts (for this job)
+        run: |
+          tesseract build tesseracts/growth_step
+          tesseract build tesseracts/neural_policy
+          tesseract build tesseracts/seed_production
+
+      - name: Run integration test
+        run: |
+          # Run main.py but with a timeout in case something hangs
+          timeout 300 python main.py || exit_code=$?
+          if [ "${exit_code:-0}" -eq 124 ]; then
+            echo "Integration test timed out after 5 minutes"
+            exit 1
+          fi
+          exit ${exit_code:-0}

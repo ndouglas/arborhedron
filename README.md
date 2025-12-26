@@ -1,104 +1,239 @@
-# Tesseract Hackathon Template
+# Arborhedron
 
-A ready-to-use template for building projects with [Tesseract Core](https://github.com/pasteurlabs/tesseract-core) and [Tesseract-JAX](https://github.com/pasteurlabs/tesseract-jax), featuring two interacting tesseracts that demonstrate vector scaling and similarity computation. Intended as a starting point for participants of the [Tesseract Hackathon](link TODO).
+[![CI](https://github.com/ndouglas/arborhedron/actions/workflows/ci.yml/badge.svg)](https://github.com/ndouglas/arborhedron/actions/workflows/ci.yml)
+[![Tesseract Build](https://github.com/ndouglas/arborhedron/actions/workflows/tesseract-build.yml/badge.svg)](https://github.com/ndouglas/arborhedron/actions/workflows/tesseract-build.yml)
 
-> [!WARNING]
-> Using this template is *not* required to participate in the Hackathon. You may use any tools at your disposal, including [Tesseract Core](https://github.com/pasteurlabs/tesseract-core), [Tesseract-JAX](https://github.com/pasteurlabs/tesseract-jax), and [Tesseract-Streamlit](https://github.com/pasteurlabs/tesseract-streamlit) — or composing Tesseracts via `docker run` calls in a glorified shell script. Your imagination is the limit!
+**Differentiable tree growth simulation under environmental stress**
 
-#### See also
-- [Tesseract Core Documentation](https://github.com/pasteurlabs/tesseract-core)
-- [Tesseract-JAX Documentation](https://github.com/pasteurlabs/tesseract-jax)
-- [Tesseract showcase](https://si-tesseract.discourse.group/c/showcase/11)
-- [Get help @ Tesseract User Forums](https://si-tesseract.discourse.group/)
+A submission for the [Tesseract Hackathon 2025](https://pasteurlabs.ai/tesseract-hackathon-2025/) exploring morphogenetic neural cellular automata for growing tree-like structures.
 
-## Overview
+![Arborhedron Stained Glass Tree](notebooks/stained_glass_hero.png)
 
-This template demonstrates how to:
-1. Define Tesseracts ([`tesseracts/*`](tesseracts)).
-2. Build them locally ([`buildall.sh`](buildall.sh)).
-3. Serve Tesseracts locally, and compose them into a (differentiable) pipeline via the [Tesseract Core SDK](https://docs.pasteurlabs.ai/projects/tesseract-core/latest/content/api/tesseract-api.html) and [Tesseract-JAX](https://github.com/pasteurlabs/tesseract-jax) ([`main.py`](main.py)).
+## Vision
 
-### Included Tesseracts
+> *"Every tree is bonsai — a Platonic ideal geometric form shaped by environmental stress."*
 
-Example Tesseracts are minimal and meant as starting point for you to build upon.
+Every tree in nature represents a perfect geometric form constrained by reality: soil irregularities, wind, asymmetric sunlight, drought, and genetic variation. This project uses differentiable simulation to explore how optimal morphogenetic rules adapt under perturbations, demonstrating the continuum between perfect form and adaptive resilience.
 
-1. scaler ([`tesseracts/scaler`](tesseracts/scaler))
-   - Scales input vectors by a given factor.
-   - Implements a vector-Jacobian product by hand for autodiff.
-2. dotproduct ([`tesseracts/dotproduct`](tesseracts/dotproduct))
-   - Computes dot product between two vectors.
-   - Calculates cosine similarity.
-   - Uses the [Tesseract JAX recipe](https://docs.pasteurlabs.ai/projects/tesseract-core/latest/content/creating-tesseracts/create.html#initialize-a-new-tesseract) to enable automatic differentiation.
+## Features
 
-### Pipeline Demo
+### Differentiable Growth Simulation
 
-The example script [`main.py`](main.py) demonstrates two ways to compose Tesseracts into pipelines.
+A complete tree growth simulator built with JAX, modeling:
 
-#### Path 1: Calling Tesseracts manually
+- **Resource economics**: Energy, water, and nutrient flows
+- **Structural dynamics**: Roots, trunk, shoots, leaves, flowers, and fruit
+- **Environmental stress**: Light, moisture, and wind with sinusoidal variation
+- **Biological constraints**: Transport bottlenecks, stomatal closure, self-shading
 
-- Call Tesseracts via [Tesseract Core SDK](https://docs.pasteurlabs.ai/projects/tesseract-core/latest/content/api/tesseract-api.html).
+The simulation is fully differentiable, enabling gradient-based optimization of growth policies.
 
-#### Path 2: Composing Tesseracts with Tesseract-JAX
+### Neural Growth Policies
 
-- Wrap Tesseract calls in a differentiable JAX function using [Tesseract-JAX](https://github.com/pasteurlabs/tesseract-jax).
+Train neural networks to allocate resources optimally across different climate conditions:
 
-## Get Started
+- MLP-based allocation policies
+- Features derived from tree state and environment
+- Training via gradient descent on seed production
+
+### Stained Glass Visualization
+
+Beautiful L-system tree rendering with:
+
+- Recursive branching structures
+- Equal-area vein panel leaf geometry
+- Blossoms and fruit
+- Stress-responsive morphology (leaf color, density, form)
+
+![Tree Gallery](notebooks/tree_gallery.png)
+
+## Tesseract Architecture
+
+The simulation is decomposed into three composable, differentiable Tesseracts:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  neural_policy  │────▶│   growth_step   │────▶│ seed_production │
+│                 │     │                 │     │                 │
+│ state + env     │     │ state + alloc   │     │ fruit_integral  │
+│ + weights       │     │ + env           │     │ + final_energy  │
+│       ↓         │     │       ↓         │     │       ↓         │
+│  allocation     │     │   new_state     │     │     seeds       │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+        ▲                       │
+        └───────────────────────┘
+              (loop 100 days)
+```
+
+### Tesseracts
+
+| Tesseract | Description | Differentiable Inputs |
+|-----------|-------------|----------------------|
+| `growth_step` | Single day tree growth dynamics | state, allocation, environment |
+| `neural_policy` | MLP-based allocation policy | state, environment, weights |
+| `seed_production` | Fitness: fruit integral → seeds | fruit_integral, final_energy |
+
+Gradients flow through all three Tesseracts, enabling end-to-end optimization of policy weights via gradient descent.
+
+## Project Structure
+
+```
+arborhedron/
+├── sim/                    # Core simulation module
+│   ├── config.py           # Configuration dataclasses
+│   ├── dynamics.py         # Growth step logic
+│   ├── stress.py           # Environmental signal generation
+│   ├── surrogates.py       # Biological surrogate functions
+│   ├── policies.py         # Allocation policies (neural + baseline)
+│   ├── rollout.py          # Full season simulation
+│   ├── stained_glass.py    # L-system tree visualization
+│   └── visualization.py    # Plotting utilities
+├── tesseracts/             # Tesseract definitions
+│   ├── growth_step/        # Single-day growth dynamics
+│   ├── neural_policy/      # Neural network allocation
+│   └── seed_production/    # Fitness computation
+├── notebooks/              # Jupyter notebooks
+│   ├── 01_surrogates.ipynb         # Surrogate function exploration
+│   ├── 02_rollout_baseline.ipynb   # Baseline policy testing
+│   ├── 03A_gradient_optimization.ipynb  # Gradient-based training
+│   ├── 03B_wind_trunk_experiment.ipynb  # Wind response analysis
+│   ├── 03C_trunk_investigation.ipynb    # Structural dynamics
+│   ├── 04_neural_policy.ipynb      # Neural policy training
+│   ├── 05_robust_evaluation.ipynb  # Cross-climate evaluation
+│   ├── 06_geometric_skeleton.ipynb # Stained glass rendering
+│   └── 07_climate_morphology.ipynb # Stress-morphology mapping
+├── tests/                  # Test suite
+└── main.py                 # Tesseract composition demo
+```
+
+## Installation
 
 ### Prerequisites
 
-- Python 3.10 or higher, ideally with a virtual environment (e.g. via `venv`, `conda`, or `uv`).
-- Working Docker setup for the current user ([Docker Desktop recommended](https://docs.pasteurlabs.ai/projects/tesseract-core/latest/content/introduction/installation.html#installing-docker)).
+- Python 3.10+
+- Docker (for Tesseract builds)
 
-### Quickstart
+### Setup
 
-1. Create a new repository off this template and clone it
-   ```bash
-   $ git clone <your-repo-url>
-   $ cd <myrepo>
-   ```
+```bash
+# Clone the repository
+git clone https://github.com/ndouglas/arborhedron.git
+cd arborhedron
 
-2. Set up virtual environment (if not done already). `uv` or `conda` can also be used.
-   ```bash
-   $ python3 -m venv .venv
-   $ source .venv/bin/activate
-   ```
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
 
-3. Install dependencies
-   ```bash
-   $ pip install -r requirements.txt
-   ```
+# Install dependencies
+pip install -r requirements.txt
 
-4. Build Tesseracts
-   ```bash
-   $ ./buildall.sh
-   ```
+# Build Tesseracts
+./buildall.sh
+```
 
-5. Run the example pipeline
-   ```bash
-   $ python main.py
-   ```
+### Run the Tesseract Pipeline
 
-## Now go and build your own!
+```bash
+python main.py
+```
 
-Some pointers to get you started:
+This demonstrates:
+1. Composing three Tesseracts into a differentiable pipeline
+2. Running a full growing season simulation
+3. Computing gradients of fitness w.r.t. policy weights
+4. Performing gradient descent optimization
 
-1. **Change Tesseract definitions**.
-     - Just update the code in `tesseracts/*`. You can add / remove Tesseracts at will, and `buildall.sh` will... build them all.
-     - Make sure to check out the [Tesseract docs](https://docs.pasteurlabs.ai/projects/tesseract-core/latest/content/creating-tesseracts/create.html) to learn how to adapt existing configuration and define Tesseracts from scratch.
-2. **Use gradients to perform optimization**.
-   - Exploit that Tesseract pipelines with AD endpoints are [end-to-end differentiable](https://docs.pasteurlabs.ai/projects/tesseract-core/latest/content/introduction/differentiable-programming.html).
-   - Check [showcases](https://si-tesseract.discourse.group/c/showcase/11) for inspiration, e.g. the [Rosenbrock optimization showcase](https://si-tesseract.discourse.group/t/jax-based-rosenbrock-function-minimization/48) for a minimal demo.
-3. **Deploy Tesseracts anywhere**.
-   - Since built Tesseracts are just Docker images, you can [deploy them virtually anywhere](https://docs.pasteurlabs.ai/projects/tesseract-core/latest/content/creating-tesseracts/deploy.html).
-   - This includes [HPC clusters via SLURM](https://si-tesseract.discourse.group/t/deploying-and-interacting-with-tesseracts-on-hpc-clusters-using-tesseract-runtime-serve/104).
-   - Have a look at [Tesseract Streamlit](https://github.com/pasteurlabs/tesseract-streamlit) that can turn Tesseracts into web apps.
-   - Show us how and where you run Tesseracts over the local network, on clusters, or in the cloud!
-4. **Happy Hacking!** 🚀
-   - Don't let these pointers constrain you. We're looking for creative solutions, so thinking out of the box is always appreciated.
-   - Have fun, and [reach out](https://si-tesseract.discourse.group/) if you need help.
+## Usage
+
+### Run a simulation
+
+```python
+from sim import SimConfig, ClimateConfig, TreeState, run_season
+
+# Configure simulation
+config = SimConfig()
+climate = ClimateConfig.mild()
+initial_state = TreeState.seedling()
+
+# Run a growing season
+trajectory = run_season(initial_state, climate, config)
+print(f"Final flowers: {trajectory.states[-1].flowers:.2f}")
+print(f"Seeds produced: {trajectory.seeds:.2f}")
+```
+
+### Train a neural policy
+
+```python
+from sim import NeuralPolicy, make_neural_policy_fn
+import jax.random as jr
+
+# Initialize policy
+key = jr.PRNGKey(42)
+policy = NeuralPolicy.init(key, hidden_size=32)
+
+# Create allocation function
+allocate = make_neural_policy_fn(policy)
+
+# Use in simulation
+trajectory = run_season(initial_state, climate, config, policy_fn=allocate)
+```
+
+### Render a stained glass tree
+
+```python
+from sim import generate_tree_skeleton, render_tree, TreeParams, TreeStyle
+
+# Generate tree structure
+params = TreeParams(depth=4, branch_angle=0.4)
+skeleton = generate_tree_skeleton(params, seed=42)
+
+# Render with style
+style = TreeStyle()
+fig = render_tree(skeleton, style)
+fig.savefig("my_tree.png", dpi=150)
+```
+
+## Key Concepts
+
+### Growth Dynamics
+
+Each simulation step models:
+
+1. **Root uptake** — Water and nutrients from soil
+2. **Transport** — Trunk limits resource delivery (bottleneck)
+3. **Photosynthesis** — Energy production with self-shading
+4. **Stomatal regulation** — Water conservation under drought
+5. **Maintenance** — Costs proportional to biomass
+6. **Allocation** — Policy decides investment distribution
+7. **Growth** — New biomass from invested energy
+8. **Damage** — Wind, drought stress on tender tissues
+9. **Reproduction** — Flowers convert to fruit under maturity
+
+### Environmental Stress
+
+Three stress signals vary sinusoidally over the growing season:
+
+- **Light** — Solar availability for photosynthesis
+- **Moisture** — Soil water for uptake (inverted-U response)
+- **Wind** — Mechanical stress on shoots, leaves, flowers
+
+### Stabilization Mechanisms
+
+The simulation includes biologically-motivated constraints:
+
+- **Self-shading** (Beer-Lambert law) prevents runaway leaf growth
+- **Transport bottleneck** requires trunk investment
+- **Stomatal closure** conserves water under drought
+- **Leaf crowding** requires shoot scaffolding
+- **Flower gating** prevents premature reproduction
+
+## Resources
+
+- [Tesseract Core Documentation](https://docs.pasteurlabs.ai/projects/tesseract-core/latest/)
+- [Tesseract-JAX](https://github.com/pasteurlabs/tesseract-jax)
+- [Tesseract User Forums](https://si-tesseract.discourse.group/)
+- [Growing Neural Cellular Automata](https://distill.pub/2020/growing-ca/) — Inspiration
 
 ## License
 
-Licensed under Apache License 2.0.
-
-All submissions must use the Apache License 2.0 to be eligible for the Tesseract Hackathon. See [LICENSE](LICENSE) file for details.
+Apache License 2.0 — See [LICENSE](LICENSE) for details.

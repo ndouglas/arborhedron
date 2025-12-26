@@ -1,0 +1,18 @@
+# Tesseract configuration file for growth_step
+# Single-day differentiable tree growth simulation
+
+name: "growth_step"
+version: "0.1.0"
+description: "Differentiable single-day tree growth step. Takes current state and allocation, returns new state."
+
+build_config:
+  target_platform: "native"
+
+  # Copy the local sim module into the container
+  package_data:
+    - [sim, sim]
+
+  # Fix permissions on copied files
+  custom_build_steps:
+    - |
+      RUN chmod -R 755 /tesseract/sim
