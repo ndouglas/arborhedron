@@ -21,10 +21,6 @@ A differentiable simulation of tree growth over a growing season, where:
 
 The simulation is decomposed into composable **Tesseracts** that can be deployed and composed via Tesseract-JAX.
 
-## What This Is NOT
-
-This is **not** a Neural Cellular Automaton. There's no spatial grid, no local update rules, no emergent patterns from local interactions. It's a global ODE-style dynamical system with a learned controller.
-
 ## Features
 
 ### Differentiable Growth Dynamics
