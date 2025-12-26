@@ -1,0 +1,9 @@
+# Tesseract configuration file for neural_policy
+# Neural network policy for tree growth allocation decisions
+
+name: "neural_policy"
+version: "0.1.0"
+description: "Differentiable neural network policy. Takes tree state and environment, returns allocation fractions."
+
+build_config:
+  target_platform: "native"

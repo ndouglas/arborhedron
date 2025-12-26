@@ -12,24 +12,20 @@ stained-glass tree art.
 """
 
 from typing import NamedTuple
-import numpy as np
-import matplotlib.pyplot as plt
+
 import matplotlib.patches as mpatches
-from matplotlib.path import Path
-from matplotlib.patches import PathPatch, Polygon
-from matplotlib.collections import PatchCollection
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import Polygon
 from scipy.spatial import ConvexHull, Delaunay, Voronoi
-from shapely.geometry import Polygon as ShapelyPolygon, Point as ShapelyPoint
-from shapely.ops import unary_union
-import jax.numpy as jnp
+from shapely.geometry import Polygon as ShapelyPolygon
 
 from sim.skeleton import (
     SkeletonState,
     compute_segment_positions_2d,
-    get_tip_indices,
     get_parent,
+    get_tip_indices,
 )
-
 
 # =============================================================================
 # POISSON DISK SAMPLING
@@ -173,7 +169,7 @@ def get_branch_segments(skeleton: SkeletonState) -> list[tuple]:
         end_x, end_y = x[idx], y[idx]
 
         # Skip tiny segments
-        seg_len = np.sqrt((end_x - start_x)**2 + (end_y - start_y)**2)
+        seg_len = np.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2)
         if seg_len < 0.01:
             continue
 
@@ -182,15 +178,15 @@ def get_branch_segments(skeleton: SkeletonState) -> list[tuple]:
     return segments
 
 
-def closest_point_on_segment(px: float, py: float,
-                              x1: float, y1: float,
-                              x2: float, y2: float) -> tuple[float, float]:
+def closest_point_on_segment(
+    px: float, py: float, x1: float, y1: float, x2: float, y2: float
+) -> tuple[float, float]:
     """
     Find closest point on line segment (x1,y1)-(x2,y2) to point (px,py).
     """
     dx = x2 - x1
     dy = y2 - y1
-    seg_len_sq = dx*dx + dy*dy
+    seg_len_sq = dx * dx + dy * dy
 
     if seg_len_sq < 1e-10:
         return x1, y1
@@ -201,20 +197,21 @@ def closest_point_on_segment(px: float, py: float,
     return x1 + t * dx, y1 + t * dy
 
 
-def find_closest_branch_point(px: float, py: float,
-                               segments: list[tuple]) -> tuple[float, float, int]:
+def find_closest_branch_point(
+    px: float, py: float, segments: list[tuple]
+) -> tuple[float, float, int]:
     """
     Find the closest point on any branch segment to a given point.
 
     Returns (closest_x, closest_y, segment_idx)
     """
-    best_dist = float('inf')
+    best_dist = float("inf")
     best_point = (px, py)
     best_idx = 0
 
-    for (x1, y1, x2, y2, idx) in segments:
+    for x1, y1, x2, y2, idx in segments:
         cx, cy = closest_point_on_segment(px, py, x1, y1, x2, y2)
-        dist = np.sqrt((cx - px)**2 + (cy - py)**2)
+        dist = np.sqrt((cx - px) ** 2 + (cy - py) ** 2)
 
         if dist < best_dist:
             best_dist = dist
@@ -224,10 +221,15 @@ def find_closest_branch_point(px: float, py: float,
     return best_point[0], best_point[1], best_idx
 
 
-def draw_micro_shoot(ax, leaf_x: float, leaf_y: float,
-                     branch_x: float, branch_y: float,
-                     wood_color: str = '#5D4037',
-                     lead_color: str = '#1a1a1a'):
+def draw_micro_shoot(
+    ax,
+    leaf_x: float,
+    leaf_y: float,
+    branch_x: float,
+    branch_y: float,
+    wood_color: str = "#5D4037",
+    lead_color: str = "#1a1a1a",
+):
     """
     Draw a thin twig connecting a leaf to the branch skeleton.
 
@@ -235,19 +237,21 @@ def draw_micro_shoot(ax, leaf_x: float, leaf_y: float,
     """
     # Lead outline (thin black)
     ax.plot(
-        [branch_x, leaf_x], [branch_y, leaf_y],
+        [branch_x, leaf_x],
+        [branch_y, leaf_y],
         color=lead_color,
         linewidth=2.0,
-        solid_capstyle='round',
+        solid_capstyle="round",
         zorder=5,  # Above background, below leaves
     )
 
     # Wood fill (brown)
     ax.plot(
-        [branch_x, leaf_x], [branch_y, leaf_y],
+        [branch_x, leaf_x],
+        [branch_y, leaf_y],
         color=wood_color,
         linewidth=1.2,
-        solid_capstyle='round',
+        solid_capstyle="round",
         zorder=6,
     )
 
@@ -257,14 +261,19 @@ def draw_micro_shoot(ax, leaf_x: float, leaf_y: float,
 # =============================================================================
 
 
-def draw_rosette_flower(ax, x: float, y: float, size: float,
-                        num_petals: int = 8,
-                        inner_ratio: float = 0.4,
-                        color: str = '#FF6B6B',
-                        center_color: str = '#FFE66D',
-                        edge_color: str = '#C0392B',
-                        rotation: float = 0.0,
-                        zorder: int = 8):
+def draw_rosette_flower(
+    ax,
+    x: float,
+    y: float,
+    size: float,
+    num_petals: int = 8,
+    inner_ratio: float = 0.4,
+    color: str = "#FF6B6B",
+    center_color: str = "#FFE66D",
+    edge_color: str = "#C0392B",
+    rotation: float = 0.0,
+    zorder: int = 8,
+):
     """
     Draw a rosette/shuriken flower instead of a circle.
 
@@ -283,9 +292,10 @@ def draw_rosette_flower(ax, x: float, y: float, size: float,
         zorder: Drawing order
     """
     # Create alternating radii for star/rosette shape
-    angles = np.linspace(0, 2*np.pi, num_petals * 2, endpoint=False) + rotation
-    radii = np.array([size if i % 2 == 0 else size * inner_ratio
-                      for i in range(num_petals * 2)])
+    angles = np.linspace(0, 2 * np.pi, num_petals * 2, endpoint=False) + rotation
+    radii = np.array(
+        [size if i % 2 == 0 else size * inner_ratio for i in range(num_petals * 2)]
+    )
 
     # Compute vertices
     verts_x = x + radii * np.cos(angles)
@@ -322,9 +332,10 @@ def draw_rosette_flower(ax, x: float, y: float, size: float,
 
 class CellType:
     """Cell types for Voronoi mosaic."""
-    LEAF = 'leaf'
-    FLOWER = 'flower'
-    BACKGROUND = 'background'
+
+    LEAF = "leaf"
+    FLOWER = "flower"
+    BACKGROUND = "background"
 
 
 def compute_canopy_boundary(
@@ -414,12 +425,14 @@ def compute_bounded_voronoi(
 
     # Add far-away dummy points to bound infinite regions
     far = max(width, height) * extend_factor
-    dummy_points = np.array([
-        [cx - far, cy - far],
-        [cx + far, cy - far],
-        [cx - far, cy + far],
-        [cx + far, cy + far],
-    ])
+    dummy_points = np.array(
+        [
+            [cx - far, cy - far],
+            [cx + far, cy - far],
+            [cx - far, cy + far],
+            [cx + far, cy + far],
+        ]
+    )
     all_points = np.vstack([seed_points, dummy_points])
 
     # Compute Voronoi
@@ -453,10 +466,10 @@ def compute_bounded_voronoi(
                 continue
 
             # Handle MultiPolygon (take largest piece)
-            if clipped.geom_type == 'MultiPolygon':
+            if clipped.geom_type == "MultiPolygon":
                 clipped = max(clipped.geoms, key=lambda g: g.area)
 
-            if clipped.geom_type != 'Polygon':
+            if clipped.geom_type != "Polygon":
                 continue
 
             # Extract coordinates
@@ -506,7 +519,9 @@ def assign_cell_types(
             tip_positions.append([x[tip_idx], y[tip_idx]])
             tip_flower_areas.append(float(skeleton.flower_area[tip_idx]))
 
-    tip_positions = np.array(tip_positions) if tip_positions else np.array([]).reshape(0, 2)
+    tip_positions = (
+        np.array(tip_positions) if tip_positions else np.array([]).reshape(0, 2)
+    )
     tip_flower_areas = np.array(tip_flower_areas) if tip_flower_areas else np.array([])
 
     # Assign types
@@ -527,7 +542,9 @@ def assign_cell_types(
             dists = np.linalg.norm(tip_positions - centroid, axis=1)
             closest_idx = np.argmin(dists)
             # Score based on flower area of closest tip
-            flower_scores[i] = tip_flower_areas[closest_idx] / (dists[closest_idx] + 0.1)
+            flower_scores[i] = tip_flower_areas[closest_idx] / (
+                dists[closest_idx] + 0.1
+            )
 
     # Sort by flower score for flower assignment
     flower_priority = np.argsort(-flower_scores)
@@ -556,7 +573,7 @@ def draw_voronoi_canopy(
     leaf_colors: list[str] = None,
     flower_colors: list[str] = None,
     background_colors: list[str] = None,
-    lead_color: str = '#1a1a1a',
+    lead_color: str = "#1a1a1a",
     lead_width: float = 2.0,
     draw_veins: bool = True,
 ):
@@ -576,12 +593,20 @@ def draw_voronoi_canopy(
         draw_veins: Draw center veins on leaf cells
     """
     if leaf_colors is None:
-        leaf_colors = ['#C0392B', '#E74C3C', '#27AE60', '#2ECC71',
-                       '#F39C12', '#E67E22', '#D35400', '#16A085']
+        leaf_colors = [
+            "#C0392B",
+            "#E74C3C",
+            "#27AE60",
+            "#2ECC71",
+            "#F39C12",
+            "#E67E22",
+            "#D35400",
+            "#16A085",
+        ]
     if flower_colors is None:
-        flower_colors = ['#FF6B6B', '#FF8E8E', '#E74C3C', '#FF7675', '#D63031']
+        flower_colors = ["#FF6B6B", "#FF8E8E", "#E74C3C", "#FF7675", "#D63031"]
     if background_colors is None:
-        background_colors = ['#FFF8DC', '#FFEFD5', '#FFE4B5', '#F5DEB3']
+        background_colors = ["#FFF8DC", "#FFEFD5", "#FFE4B5", "#F5DEB3"]
 
     for verts, cell_type, color_idx in typed_cells:
         # Select color based on type
@@ -621,11 +646,15 @@ def draw_voronoi_canopy(
             # Draw short vein line
             vein_len = dists[max_idx] * 0.5
             ax.plot(
-                [centroid[0] - direction[0] * vein_len * 0.3,
-                 centroid[0] + direction[0] * vein_len * 0.5],
-                [centroid[1] - direction[1] * vein_len * 0.3,
-                 centroid[1] + direction[1] * vein_len * 0.5],
-                color='#1a1a1a',
+                [
+                    centroid[0] - direction[0] * vein_len * 0.3,
+                    centroid[0] + direction[0] * vein_len * 0.5,
+                ],
+                [
+                    centroid[1] - direction[1] * vein_len * 0.3,
+                    centroid[1] + direction[1] * vein_len * 0.5,
+                ],
+                color="#1a1a1a",
                 linewidth=0.8,
                 alpha=0.3,
                 zorder=zorder + 1,
@@ -638,8 +667,8 @@ def draw_voronoi_canopy(
             center = mpatches.Circle(
                 centroid,
                 radius=0.015,
-                facecolor='#FFE66D',
-                edgecolor='#D35400',
+                facecolor="#FFE66D",
+                edgecolor="#D35400",
                 linewidth=0.5,
                 zorder=zorder + 1,
             )
@@ -688,7 +717,7 @@ def render_stained_glass_voronoi(
         fig, ax = plt.subplots(figsize=figsize)
 
     np.random.seed(seed)
-    ax.set_facecolor('#FFF8DC')
+    ax.set_facecolor("#FFF8DC")
 
     # Get positions
     x, y, _ = compute_segment_positions_2d(skeleton)
@@ -704,7 +733,7 @@ def render_stained_glass_voronoi(
 
     # 1. Background panels
     if show_background_panels:
-        draw_background_panels(ax, style='radial', num_panels=12)
+        draw_background_panels(ax, style="radial", num_panels=12)
 
     # 2. Ground
     if show_ground:
@@ -732,7 +761,9 @@ def render_stained_glass_voronoi(
 
             # Assign types
             typed_cells = assign_cell_types(
-                cells, seed_points, skeleton,
+                cells,
+                seed_points,
+                skeleton,
                 flower_fraction=flower_fraction,
                 background_fraction=background_fraction,
                 seed=seed,
@@ -740,16 +771,17 @@ def render_stained_glass_voronoi(
 
             # Draw canopy
             draw_voronoi_canopy(
-                ax, typed_cells,
+                ax,
+                typed_cells,
                 leaf_colors=leaf_palette,
                 draw_veins=True,
             )
 
-    ax.set_aspect('equal')
-    ax.axis('off')
+    ax.set_aspect("equal")
+    ax.axis("off")
 
     if title:
-        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+        ax.set_title(title, fontsize=16, fontweight="bold", pad=20)
 
     return ax
 
@@ -801,14 +833,14 @@ def generate_leaf_silhouette(
     # Width profile: starts narrow, widens, then narrows to tip
     # Use a modified sine curve that peaks around t=0.4-0.5
     # w(t) = sin(pi * t^0.7) gives a nice leaf shape
-    width_profile = np.sin(np.pi * (t ** 0.7))
+    width_profile = np.sin(np.pi * (t**0.7))
 
     # Modify base to be narrower
-    base_taper = base_width + (1 - base_width) * t ** 0.5
+    base_taper = base_width + (1 - base_width) * t**0.5
     width_profile = width_profile * base_taper
 
     # Sharpen the tip
-    tip_taper = 1 - (1 - tip_sharpness) * (t ** 2)
+    tip_taper = 1 - (1 - tip_sharpness) * (t**2)
     width_profile = width_profile * tip_taper
 
     # Normalize so max is 1
@@ -828,7 +860,7 @@ def generate_leaf_silhouette(
     # Convert to coordinates (leaf points in +angle direction)
     cos_a, sin_a = np.cos(angle), np.sin(angle)
     # Perpendicular direction
-    cos_perp, sin_perp = np.cos(angle + np.pi/2), np.sin(angle + np.pi/2)
+    cos_perp, sin_perp = np.cos(angle + np.pi / 2), np.sin(angle + np.pi / 2)
 
     # Base position (tip minus length in angle direction)
     base_x = tip_x - length * cos_a
@@ -872,7 +904,7 @@ def generate_leaf_polygon(
     for a in angles:
         rel_angle = a - angle
         r = size * (0.4 + 0.6 * np.abs(np.sin(rel_angle)))
-        r *= (1 + np.random.uniform(-irregularity * 0.5, irregularity * 0.5))
+        r *= 1 + np.random.uniform(-irregularity * 0.5, irregularity * 0.5)
         radii.append(r)
 
     radii = np.array(radii)
@@ -888,11 +920,11 @@ def draw_natural_leaf(
     fill_color: str,
     base_point: tuple[float, float],
     tip_point: tuple[float, float],
-    edge_color: str = '#1a1a1a',
+    edge_color: str = "#1a1a1a",
     edge_width: float = 1.5,
     draw_vein: bool = True,
     draw_variegation: bool = True,
-    vein_color: str = '#1a1a1a',
+    vein_color: str = "#1a1a1a",
     vein_alpha: float = 0.5,
     zorder: int = 10,
     seed: int = 0,
@@ -930,8 +962,15 @@ def draw_natural_leaf(
     # Draw variegation (inner stripe) - coleus style
     if draw_variegation:
         # Inner colors for variegation
-        inner_colors = ['#2ECC71', '#F1C40F', '#E74C3C', '#9B59B6',
-                        '#3498DB', '#1ABC9C', '#E67E22']
+        inner_colors = [
+            "#2ECC71",
+            "#F1C40F",
+            "#E74C3C",
+            "#9B59B6",
+            "#3498DB",
+            "#1ABC9C",
+            "#E67E22",
+        ]
         inner_color = inner_colors[seed % len(inner_colors)]
 
         # Create smaller inner leaf shape
@@ -941,7 +980,7 @@ def draw_natural_leaf(
         inner_leaf = Polygon(
             inner_verts,
             facecolor=inner_color,
-            edgecolor='none',
+            edgecolor="none",
             alpha=0.6,
             zorder=zorder + 0.5,
         )
@@ -972,10 +1011,10 @@ def draw_polygon_leaf(
     ax,
     vertices: np.ndarray,
     fill_color: str,
-    edge_color: str = '#1a1a1a',
+    edge_color: str = "#1a1a1a",
     edge_width: float = 1.5,
     draw_vein: bool = True,
-    vein_color: str = '#1a1a1a',
+    vein_color: str = "#1a1a1a",
     vein_alpha: float = 0.4,
     zorder: int = 10,
 ):
@@ -1002,10 +1041,14 @@ def draw_polygon_leaf(
         vein_len = dists[sorted_idx[-1]] * 0.6
 
         ax.plot(
-            [centroid[0] - direction[0] * vein_len * 0.2,
-             centroid[0] + direction[0] * vein_len * 0.7],
-            [centroid[1] - direction[1] * vein_len * 0.2,
-             centroid[1] + direction[1] * vein_len * 0.7],
+            [
+                centroid[0] - direction[0] * vein_len * 0.2,
+                centroid[0] + direction[0] * vein_len * 0.7,
+            ],
+            [
+                centroid[1] - direction[1] * vein_len * 0.2,
+                centroid[1] + direction[1] * vein_len * 0.7,
+            ],
             color=vein_color,
             linewidth=0.8,
             alpha=vein_alpha,
@@ -1055,14 +1098,23 @@ def render_stained_glass_natural(
         fig, ax = plt.subplots(figsize=figsize)
 
     np.random.seed(seed)
-    ax.set_facecolor('#FFF8DC')
+    ax.set_facecolor("#FFF8DC")
 
     if leaf_colors is None:
-        leaf_colors = ['#C0392B', '#E74C3C', '#27AE60', '#2ECC71',
-                       '#F39C12', '#E67E22', '#D35400', '#16A085',
-                       '#1ABC9C', '#9B59B6']
+        leaf_colors = [
+            "#C0392B",
+            "#E74C3C",
+            "#27AE60",
+            "#2ECC71",
+            "#F39C12",
+            "#E67E22",
+            "#D35400",
+            "#16A085",
+            "#1ABC9C",
+            "#9B59B6",
+        ]
     if flower_colors is None:
-        flower_colors = ['#FF6B6B', '#FF8E8E', '#E74C3C', '#FF7675']
+        flower_colors = ["#FF6B6B", "#FF8E8E", "#E74C3C", "#FF7675"]
 
     # Get positions
     x, y, _ = compute_segment_positions_2d(skeleton)
@@ -1078,7 +1130,7 @@ def render_stained_glass_natural(
 
     # 1. Background panels
     if show_background:
-        draw_background_panels(ax, style='radial', num_panels=12)
+        draw_background_panels(ax, style="radial", num_panels=12)
 
     # 2. Ground
     if show_ground:
@@ -1147,7 +1199,8 @@ def render_stained_glass_natural(
         color = leaf_colors[i % len(leaf_colors)]
 
         draw_natural_leaf(
-            ax, vertices,
+            ax,
+            vertices,
             fill_color=color,
             base_point=(base_x, base_y),
             tip_point=(leaf_tip_x, leaf_tip_y),
@@ -1183,18 +1236,20 @@ def render_stained_glass_natural(
         flower_size = 0.03 + 0.02 * np.sqrt(flower_area)
 
         draw_rosette_flower(
-            ax, flower_x, flower_y,
+            ax,
+            flower_x,
+            flower_y,
             size=min(flower_size, 0.045),
             num_petals=np.random.choice([6, 8]),
             color=flower_colors[i % len(flower_colors)],
             zorder=11,
         )
 
-    ax.set_aspect('equal')
-    ax.axis('off')
+    ax.set_aspect("equal")
+    ax.axis("off")
 
     if title:
-        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+        ax.set_title(title, fontsize=16, fontweight="bold", pad=20)
 
     return ax
 
@@ -1206,25 +1261,26 @@ def render_stained_glass_natural(
 
 class LeafStyle(NamedTuple):
     """Style parameters for leaf rendering."""
+
     base_colors: list  # List of possible fill colors
-    edge_color: str = '#1a1a1a'
+    edge_color: str = "#1a1a1a"
     edge_width: float = 1.5
-    vein_color: str = '#1a1a1a'
+    vein_color: str = "#1a1a1a"
     vein_alpha: float = 0.4
     variegated: bool = True  # Coleus-style inner stripe
 
 
 # Predefined palettes
 AUTUMN_PALETTE = LeafStyle(
-    base_colors=['#C0392B', '#E74C3C', '#27AE60', '#F39C12', '#E67E22', '#D35400'],
+    base_colors=["#C0392B", "#E74C3C", "#27AE60", "#F39C12", "#E67E22", "#D35400"],
 )
 
 SPRING_PALETTE = LeafStyle(
-    base_colors=['#27AE60', '#2ECC71', '#1ABC9C', '#16A085', '#82E0AA'],
+    base_colors=["#27AE60", "#2ECC71", "#1ABC9C", "#16A085", "#82E0AA"],
 )
 
 SUNSET_PALETTE = LeafStyle(
-    base_colors=['#E74C3C', '#C0392B', '#F39C12', '#D35400', '#922B21'],
+    base_colors=["#E74C3C", "#C0392B", "#F39C12", "#D35400", "#922B21"],
 )
 
 
@@ -1269,7 +1325,7 @@ def draw_leaf(
     # Variegated inner stripe (Coleus effect)
     if style.variegated:
         # Slightly different color for inner stripe
-        inner_colors = ['#2ECC71', '#F1C40F', '#E74C3C', '#9B59B6', '#3498DB']
+        inner_colors = ["#2ECC71", "#F1C40F", "#E74C3C", "#9B59B6", "#3498DB"]
         inner_color = inner_colors[seed % len(inner_colors)]
 
         inner = mpatches.Ellipse(
@@ -1278,7 +1334,7 @@ def draw_leaf(
             height=size * 0.6,
             angle=angle,
             facecolor=inner_color,
-            edgecolor='none',
+            edgecolor="none",
             alpha=0.7,
             zorder=11,
         )
@@ -1307,8 +1363,8 @@ def draw_leaf(
 def draw_branches_lead_came(
     ax,
     skeleton: SkeletonState,
-    wood_color: str = '#8B4513',
-    lead_color: str = '#1a1a1a',
+    wood_color: str = "#8B4513",
+    lead_color: str = "#1a1a1a",
     lead_width: float = 2.0,
 ):
     """
@@ -1337,7 +1393,7 @@ def draw_branches_lead_came(
         end_x, end_y = x[idx], y[idx]
 
         # Skip tiny segments
-        seg_len = np.sqrt((end_x - start_x)**2 + (end_y - start_y)**2)
+        seg_len = np.sqrt((end_x - start_x) ** 2 + (end_y - start_y) ** 2)
         if seg_len < 0.01:
             continue
 
@@ -1347,19 +1403,21 @@ def draw_branches_lead_came(
 
         # Lead outline (black, wider)
         ax.plot(
-            [start_x, end_x], [start_y, end_y],
+            [start_x, end_x],
+            [start_y, end_y],
             color=lead_color,
             linewidth=base_width + lead_width,
-            solid_capstyle='round',
+            solid_capstyle="round",
             zorder=3,
         )
 
         # Wood fill (brown, narrower)
         ax.plot(
-            [start_x, end_x], [start_y, end_y],
+            [start_x, end_x],
+            [start_y, end_y],
             color=wood_color,
             linewidth=base_width,
-            solid_capstyle='round',
+            solid_capstyle="round",
             zorder=4,
         )
 
@@ -1372,7 +1430,7 @@ def draw_branches_lead_came(
 def draw_background_panels(
     ax,
     panel_colors: list = None,
-    style: str = 'radial',
+    style: str = "radial",
     num_panels: int = 8,
 ):
     """
@@ -1385,13 +1443,13 @@ def draw_background_panels(
         num_panels: Number of panels
     """
     if panel_colors is None:
-        panel_colors = ['#FFF8DC', '#FFE4B5', '#FFEFD5', '#F5DEB3', '#DEB887']
+        panel_colors = ["#FFF8DC", "#FFE4B5", "#FFEFD5", "#F5DEB3", "#DEB887"]
 
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
     cx, cy = (xlim[0] + xlim[1]) / 2, 0  # Center at ground level
 
-    if style == 'radial':
+    if style == "radial":
         # Radial divisions from center
         for i in range(num_panels):
             angle1 = i * np.pi / num_panels
@@ -1406,8 +1464,14 @@ def draw_background_panels(
             ]
 
             color = panel_colors[i % len(panel_colors)]
-            wedge = Polygon(verts, facecolor=color, edgecolor='#1a1a1a',
-                           linewidth=0.5, alpha=0.3, zorder=0)
+            wedge = Polygon(
+                verts,
+                facecolor=color,
+                edgecolor="#1a1a1a",
+                linewidth=0.5,
+                alpha=0.3,
+                zorder=0,
+            )
             ax.add_patch(wedge)
 
 
@@ -1419,7 +1483,7 @@ def draw_ground(
 ):
     """Draw stylized ground panels."""
     if colors is None:
-        colors = ['#8BC34A', '#4A90A4', '#E07B54']
+        colors = ["#8BC34A", "#4A90A4", "#E07B54"]
 
     xlim = ax.get_xlim()
     width = (xlim[1] - xlim[0]) / len(colors)
@@ -1428,9 +1492,10 @@ def draw_ground(
         x_start = xlim[0] + i * width
         rect = mpatches.Rectangle(
             (x_start, y_level - depth),
-            width, depth,
+            width,
+            depth,
             facecolor=color,
-            edgecolor='#1a1a1a',
+            edgecolor="#1a1a1a",
             linewidth=1.5,
             alpha=0.7,
             zorder=1,
@@ -1454,7 +1519,7 @@ def render_stained_glass_tree(
     show_ground: bool = True,
     show_micro_shoots: bool = True,
     max_flower_ratio: float = 0.10,  # Max flowers as fraction of leaves
-    flower_size_cap: float = 0.05,   # Maximum flower radius
+    flower_size_cap: float = 0.05,  # Maximum flower radius
     title: str = "",
     seed: int = 42,
 ):
@@ -1496,7 +1561,7 @@ def render_stained_glass_tree(
         fig, ax = plt.subplots(figsize=figsize)
 
     np.random.seed(seed)
-    ax.set_facecolor('#FFF8DC')  # Warm cream background
+    ax.set_facecolor("#FFF8DC")  # Warm cream background
 
     # Get tip positions for canopy
     x, y, _ = compute_segment_positions_2d(skeleton)
@@ -1515,7 +1580,7 @@ def render_stained_glass_tree(
 
     # 1. Background panels (lowest z-order)
     if show_background:
-        draw_background_panels(ax, style='radial', num_panels=12)
+        draw_background_panels(ax, style="radial", num_panels=12)
 
     # 2. Ground
     if show_ground:
@@ -1590,7 +1655,7 @@ def render_stained_glass_tree(
     flower_candidates = flower_candidates[:max_flowers]
 
     # Draw flowers (z-order 8-9, BELOW leaves which are at 10-12)
-    flower_colors = ['#FF6B6B', '#FF8E8E', '#E74C3C', '#FF7675', '#D63031']
+    flower_colors = ["#FF6B6B", "#FF8E8E", "#E74C3C", "#FF7675", "#D63031"]
     for tip_x, tip_y, flower_area, i in flower_candidates:
         # Small offset to tuck into canopy gap
         offset = 0.02
@@ -1602,22 +1667,24 @@ def render_stained_glass_tree(
         flower_size = min(raw_size, flower_size_cap)
 
         draw_rosette_flower(
-            ax, flower_x, flower_y,
+            ax,
+            flower_x,
+            flower_y,
             size=flower_size,
             num_petals=np.random.choice([6, 8, 10]),
             inner_ratio=0.35 + 0.1 * np.random.random(),
             color=flower_colors[i % len(flower_colors)],
-            center_color='#FFE66D',
-            edge_color='#922B21',
+            center_color="#FFE66D",
+            edge_color="#922B21",
             rotation=np.random.random() * np.pi / 4,
             zorder=8,  # BELOW leaves (10-12)
         )
 
-    ax.set_aspect('equal')
-    ax.axis('off')
+    ax.set_aspect("equal")
+    ax.axis("off")
 
     if title:
-        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+        ax.set_title(title, fontsize=16, fontweight="bold", pad=20)
 
     return ax
 

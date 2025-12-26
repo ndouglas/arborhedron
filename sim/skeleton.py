@@ -21,6 +21,7 @@ All operations are differentiable for gradient-based optimization.
 """
 
 from typing import NamedTuple
+
 import jax.numpy as jnp
 from jax import Array
 from jax.nn import sigmoid
@@ -40,11 +41,12 @@ class SkeletonState(NamedTuple):
         leaf_area: Leaf biomass at tips (only meaningful for tip segments)
         flower_area: Flower biomass at tips
     """
-    length: Array       # [num_segments]
-    thickness: Array    # [num_segments]
-    alive: Array        # [num_segments] in [0,1]
-    angle: Array        # [num_segments] relative angle in radians
-    leaf_area: Array    # [num_segments] (tips only)
+
+    length: Array  # [num_segments]
+    thickness: Array  # [num_segments]
+    alive: Array  # [num_segments] in [0,1]
+    angle: Array  # [num_segments] relative angle in radians
+    leaf_area: Array  # [num_segments] (tips only)
     flower_area: Array  # [num_segments] (tips only)
 
     @classmethod
@@ -74,10 +76,10 @@ class SkeletonState(NamedTuple):
         # Set default branch spread angles
         for level in range(1, depth):
             start_idx = 2**level - 1
-            end_idx = 2**(level + 1) - 1
+            end_idx = 2 ** (level + 1) - 1
             spread = jnp.pi / 4 / (level + 1)  # Decreasing spread with depth
             for idx in range(start_idx, min(end_idx, num_segments)):
-                is_left = (idx % 2 == 1)
+                is_left = idx % 2 == 1
                 angle = angle.at[idx].set(spread if is_left else -spread)
 
         # No initial leaves or flowers
@@ -117,8 +119,8 @@ class SkeletonState(NamedTuple):
 
 def get_tip_indices(depth: int) -> Array:
     """Get indices of tip segments (deepest level)."""
-    first_tip = 2**(depth - 1) - 1
-    num_tips = 2**(depth - 1)
+    first_tip = 2 ** (depth - 1) - 1
+    num_tips = 2 ** (depth - 1)
     return jnp.arange(first_tip, first_tip + num_tips)
 
 
@@ -166,7 +168,7 @@ def compute_segment_positions_2d(
     # Build positions level by level
     for level in range(1, depth):
         start_idx = 2**level - 1
-        end_idx = 2**(level + 1) - 1
+        end_idx = 2 ** (level + 1) - 1
 
         for idx in range(start_idx, min(end_idx, num_segments)):
             parent = (idx - 1) // 2
@@ -242,7 +244,7 @@ def compute_light_capture(
 
             # Gaussian falloff based on horizontal distance
             dx = other_x - tip_x
-            gaussian_weight = jnp.exp(-dx**2 / (2 * shade_sigma**2))
+            gaussian_weight = jnp.exp(-(dx**2) / (2 * shade_sigma**2))
 
             # Shadow contribution = leaf area * above factor * proximity
             shadow_density = shadow_density + other_leaf * is_above * gaussian_weight
@@ -303,7 +305,7 @@ def compute_wind_exposure(
     depth = skeleton.depth
     for level in range(depth - 1, 0, -1):
         start_idx = 2**level - 1
-        end_idx = 2**(level + 1) - 1
+        end_idx = 2 ** (level + 1) - 1
         for idx in range(start_idx, min(end_idx, skeleton.num_segments)):
             parent = (idx - 1) // 2
             leaf_load = leaf_load.at[parent].add(leaf_load[idx] * skeleton.alive[idx])
@@ -316,7 +318,7 @@ def compute_wind_exposure(
 
         # Height factor: h^α (with small offset to avoid zero)
         height = jnp.maximum(y[idx], 0.1)
-        height_factor = height ** height_exponent
+        height_factor = height**height_exponent
 
         # Orientation factor: |sin(θ_segment - θ_wind)|
         # Segments perpendicular to wind catch more force
@@ -333,11 +335,7 @@ def compute_wind_exposure(
 
         # Total exposure
         segment_exposure = (
-            wind_speed
-            * height_factor
-            * orientation_factor
-            * load_factor
-            * protection
+            wind_speed * height_factor * orientation_factor * load_factor * protection
         )
 
         exposure = exposure.at[idx].set(segment_exposure * alive)
@@ -352,16 +350,19 @@ def skeleton_to_scalar_state(skeleton: SkeletonState) -> dict:
     This allows using skeleton representation with existing dynamics.
     """
     return {
-        'trunk': float(skeleton.thickness[0] * skeleton.length[0]),
-        'shoots': float(skeleton.total_wood() - skeleton.thickness[0] * skeleton.length[0]),
-        'leaves': float(skeleton.total_leaves()),
-        'flowers': float(skeleton.total_flowers()),
+        "trunk": float(skeleton.thickness[0] * skeleton.length[0]),
+        "shoots": float(
+            skeleton.total_wood() - skeleton.thickness[0] * skeleton.length[0]
+        ),
+        "leaves": float(skeleton.total_leaves()),
+        "flowers": float(skeleton.total_flowers()),
     }
 
 
 # =============================================================================
 # SOIL TILES - Spatial root allocation
 # =============================================================================
+
 
 class SoilTiles(NamedTuple):
     """
@@ -380,8 +381,9 @@ class SoilTiles(NamedTuple):
         nutrients: [num_tiles] nutrient availability per tile (0-1)
         root_allocation: [num_tiles] fraction of roots in each tile (sums to 1)
     """
-    water: Array       # [num_tiles] water availability
-    nutrients: Array   # [num_tiles] nutrient availability
+
+    water: Array  # [num_tiles] water availability
+    nutrients: Array  # [num_tiles] nutrient availability
     root_allocation: Array  # [num_tiles] root investment fractions
 
     @classmethod
@@ -394,7 +396,9 @@ class SoilTiles(NamedTuple):
         )
 
     @classmethod
-    def asymmetric(cls, water_gradient: float = 0.3, nutrient_gradient: float = 0.2) -> "SoilTiles":
+    def asymmetric(
+        cls, water_gradient: float = 0.3, nutrient_gradient: float = 0.2
+    ) -> "SoilTiles":
         """
         Create soil with gradients across tiles.
 
@@ -407,7 +411,9 @@ class SoilTiles(NamedTuple):
         base = 0.5
         return cls(
             water=jnp.array([base - water_gradient, base, base + water_gradient]),
-            nutrients=jnp.array([base + nutrient_gradient, base, base - nutrient_gradient]),
+            nutrients=jnp.array(
+                [base + nutrient_gradient, base, base - nutrient_gradient]
+            ),
             root_allocation=jnp.ones(3) / 3,
         )
 
@@ -437,8 +443,12 @@ def compute_root_uptake(
     nutrient_saturation = tiles.nutrients / (tiles.nutrients + k_uptake)
 
     # Weight by root allocation
-    water_uptake = total_root_biomass * jnp.sum(tiles.root_allocation * water_saturation)
-    nutrient_uptake = total_root_biomass * jnp.sum(tiles.root_allocation * nutrient_saturation)
+    water_uptake = total_root_biomass * jnp.sum(
+        tiles.root_allocation * water_saturation
+    )
+    nutrient_uptake = total_root_biomass * jnp.sum(
+        tiles.root_allocation * nutrient_saturation
+    )
 
     return float(water_uptake), float(nutrient_uptake)
 
@@ -446,7 +456,9 @@ def compute_root_uptake(
 def get_tile_positions(num_tiles: int = 3, width: float = 3.0) -> Array:
     """Get x-coordinates of tile centers."""
     tile_width = width / num_tiles
-    return jnp.linspace(-width/2 + tile_width/2, width/2 - tile_width/2, num_tiles)
+    return jnp.linspace(
+        -width / 2 + tile_width / 2, width / 2 - tile_width / 2, num_tiles
+    )
 
 
 def compute_root_bias(tiles: SoilTiles) -> float:
@@ -524,7 +536,7 @@ def enforce_bilateral_symmetry(arr: Array, depth: int) -> Array:
         Symmetrized array
     """
     num_segments = 2**depth - 1
-    result = arr.copy() if hasattr(arr, 'copy') else jnp.array(arr)
+    result = arr.copy() if hasattr(arr, "copy") else jnp.array(arr)
 
     for idx in range(num_segments):
         mirror = get_mirror_index(idx)
@@ -561,10 +573,11 @@ def create_grown_skeleton(
         SkeletonState with grown tree
     """
     import numpy as np
+
     np.random.seed(seed)
 
     num_segments = 2**depth - 1
-    tip_start = 2**(depth - 1) - 1
+    tip_start = 2 ** (depth - 1) - 1
 
     # Initialize arrays
     length = np.zeros(num_segments)
@@ -582,12 +595,12 @@ def create_grown_skeleton(
     # Build tree level by level
     for level in range(1, depth):
         level_start = 2**level - 1
-        level_end = 2**(level + 1) - 1
+        level_end = 2 ** (level + 1) - 1
         depth_factor = 1.0 - 0.12 * level  # Taper with depth
 
         for idx in range(level_start, min(level_end, num_segments)):
             # Base spread angle (left vs right)
-            is_left = (idx % 2 == 1)
+            is_left = idx % 2 == 1
             base_spread = np.pi / 5 / (level + 1)
             angle[idx] = base_spread if is_left else -base_spread
 
@@ -596,9 +609,9 @@ def create_grown_skeleton(
 
             # Length and thickness decrease with depth
             length[idx] = 0.35 * depth_factor * growth_stage
-            length[idx] *= (0.8 + 0.4 * np.random.random())  # Random variation
+            length[idx] *= 0.8 + 0.4 * np.random.random()  # Random variation
 
-            thickness[idx] = 0.08 * (depth_factor ** 1.5) * growth_stage
+            thickness[idx] = 0.08 * (depth_factor**1.5) * growth_stage
 
             # Pruning: randomly kill some branches
             if np.random.random() < prune_fraction * (level / depth):

@@ -391,16 +391,18 @@ def make_policy_features(
     # State features (divide by typical max values for rough normalization)
     # Energy/water/nutrients typically in [0, 1]
     # Biomass typically in [0, 3]
-    state_features = jnp.array([
-        state.energy,           # [0, 1] typically
-        state.water,            # [0, 1] typically
-        state.nutrients,        # [0, 1] typically
-        state.roots / 2.0,      # normalize to ~[0, 1.5]
-        state.trunk / 2.0,
-        state.shoots / 2.0,
-        state.leaves / 2.0,
-        state.flowers / 2.0,
-    ])
+    state_features = jnp.array(
+        [
+            state.energy,  # [0, 1] typically
+            state.water,  # [0, 1] typically
+            state.nutrients,  # [0, 1] typically
+            state.roots / 2.0,  # normalize to ~[0, 1.5]
+            state.trunk / 2.0,
+            state.shoots / 2.0,
+            state.leaves / 2.0,
+            state.flowers / 2.0,
+        ]
+    )
 
     # Progress through season [0, 1]
     progress = jnp.array([day / num_days])
@@ -464,12 +466,17 @@ def make_neural_policy_fn(
     Returns:
         Policy function with signature (state, day, num_days, wind) → Allocation
     """
-    def policy_fn(state: TreeState, day: int, num_days_arg: int, wind: float = 0.0) -> Allocation:
+
+    def policy_fn(
+        state: TreeState, day: int, num_days_arg: int, wind: float = 0.0
+    ) -> Allocation:
         # Get environment values for this day
         light = light_fn(day)
         moisture = moisture_fn(day)
         wind_val = wind_fn(day)
-        return apply_neural_policy(policy, state, day, num_days, light, moisture, wind_val)
+        return apply_neural_policy(
+            policy, state, day, num_days, light, moisture, wind_val
+        )
 
     return policy_fn
 

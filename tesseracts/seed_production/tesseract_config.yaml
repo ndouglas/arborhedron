@@ -1,0 +1,9 @@
+# Tesseract configuration file for seed_production
+# Fitness function: convert fruit integral to seeds
+
+name: "seed_production"
+version: "0.1.0"
+description: "Differentiable seed production from accumulated fruit. The fitness function for tree growth optimization."
+
+build_config:
+  target_platform: "native"

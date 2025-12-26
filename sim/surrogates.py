@@ -1000,7 +1000,9 @@ def crowding_penalty(
         Growth efficiency multiplier in [floor, 1]
     """
     # Capacity is proportional to scaffold
-    capacity = capacity_per_scaffold * jnp.array(scaffold) + 1e-6  # epsilon for stability
+    capacity = (
+        capacity_per_scaffold * jnp.array(scaffold) + 1e-6
+    )  # epsilon for stability
 
     # Crowding ratio: >1 means overcrowded
     crowding = jnp.array(occupant) / capacity

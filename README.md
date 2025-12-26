@@ -1,5 +1,8 @@
 # Arborhedron
 
+[![CI](https://github.com/ndouglas/arborhedron/actions/workflows/ci.yml/badge.svg)](https://github.com/ndouglas/arborhedron/actions/workflows/ci.yml)
+[![Tesseract Build](https://github.com/ndouglas/arborhedron/actions/workflows/tesseract-build.yml/badge.svg)](https://github.com/ndouglas/arborhedron/actions/workflows/tesseract-build.yml)
+
 **Differentiable tree growth simulation under environmental stress**
 
 A submission for the [Tesseract Hackathon 2025](https://pasteurlabs.ai/tesseract-hackathon-2025/) exploring morphogenetic neural cellular automata for growing tree-like structures.
@@ -44,6 +47,34 @@ Beautiful L-system tree rendering with:
 
 ![Tree Gallery](notebooks/tree_gallery.png)
 
+## Tesseract Architecture
+
+The simulation is decomposed into three composable, differentiable Tesseracts:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  neural_policy  │────▶│   growth_step   │────▶│ seed_production │
+│                 │     │                 │     │                 │
+│ state + env     │     │ state + alloc   │     │ fruit_integral  │
+│ + weights       │     │ + env           │     │ + final_energy  │
+│       ↓         │     │       ↓         │     │       ↓         │
+│  allocation     │     │   new_state     │     │     seeds       │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+        ▲                       │
+        └───────────────────────┘
+              (loop 100 days)
+```
+
+### Tesseracts
+
+| Tesseract | Description | Differentiable Inputs |
+|-----------|-------------|----------------------|
+| `growth_step` | Single day tree growth dynamics | state, allocation, environment |
+| `neural_policy` | MLP-based allocation policy | state, environment, weights |
+| `seed_production` | Fitness: fruit integral → seeds | fruit_integral, final_energy |
+
+Gradients flow through all three Tesseracts, enabling end-to-end optimization of policy weights via gradient descent.
+
 ## Project Structure
 
 ```
@@ -57,6 +88,10 @@ arborhedron/
 │   ├── rollout.py          # Full season simulation
 │   ├── stained_glass.py    # L-system tree visualization
 │   └── visualization.py    # Plotting utilities
+├── tesseracts/             # Tesseract definitions
+│   ├── growth_step/        # Single-day growth dynamics
+│   ├── neural_policy/      # Neural network allocation
+│   └── seed_production/    # Fitness computation
 ├── notebooks/              # Jupyter notebooks
 │   ├── 01_surrogates.ipynb         # Surrogate function exploration
 │   ├── 02_rollout_baseline.ipynb   # Baseline policy testing
@@ -68,7 +103,7 @@ arborhedron/
 │   ├── 06_geometric_skeleton.ipynb # Stained glass rendering
 │   └── 07_climate_morphology.ipynb # Stress-morphology mapping
 ├── tests/                  # Test suite
-└── tesseracts/             # Tesseract definitions (for deployment)
+└── main.py                 # Tesseract composition demo
 ```
 
 ## Installation
@@ -91,7 +126,22 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Build Tesseracts
+./buildall.sh
 ```
+
+### Run the Tesseract Pipeline
+
+```bash
+python main.py
+```
+
+This demonstrates:
+1. Composing three Tesseracts into a differentiable pipeline
+2. Running a full growing season simulation
+3. Computing gradients of fitness w.r.t. policy weights
+4. Performing gradient descent optimization
 
 ## Usage
 

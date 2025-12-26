@@ -238,7 +238,9 @@ def step(
     trunk_growth, trunk_cost = compute_growth(allocation.trunk, config.eta_trunk)
     shoot_growth, shoot_cost = compute_growth(allocation.shoots, config.eta_shoot)
     leaf_growth, leaf_cost = compute_growth(allocation.leaves, effective_leaf_eta)
-    flower_growth, flower_cost = compute_growth(gated_flower_alloc, effective_flower_eta)
+    flower_growth, flower_cost = compute_growth(
+        gated_flower_alloc, effective_flower_eta
+    )
 
     # Apply growth
     roots = roots + root_growth

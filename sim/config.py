@@ -383,7 +383,9 @@ class SimConfig:
     fruit_maturity_leaves: float = 0.25  # L_0: leaves threshold for mature fruit
     fruit_maturity_roots: float = 0.15  # R_0: roots threshold for mature fruit
     fruit_maturity_steepness: float = 10.0  # k: steepness of maturity gates
-    fruit_conversion_rate: float = 0.5  # α: base flowers → fruit rate (increased to offset saturation)
+    fruit_conversion_rate: float = (
+        0.5  # α: base flowers → fruit rate (increased to offset saturation)
+    )
     fruit_decay_rate: float = 0.02  # ρ: natural fruit decay (ripening/falling)
 
     # Saturating flower→fruit conversion (prevents "all-in flowers" being optimal)
