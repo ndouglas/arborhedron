@@ -3,237 +3,129 @@
 [![CI](https://github.com/ndouglas/arborhedron/actions/workflows/ci.yml/badge.svg)](https://github.com/ndouglas/arborhedron/actions/workflows/ci.yml)
 [![Tesseract Build](https://github.com/ndouglas/arborhedron/actions/workflows/tesseract-build.yml/badge.svg)](https://github.com/ndouglas/arborhedron/actions/workflows/tesseract-build.yml)
 
-**Differentiable tree growth simulation under environmental stress**
+**Differentiable tree growth simulation with learned resource allocation**
 
-A submission for the [Tesseract Hackathon 2025](https://pasteurlabs.ai/tesseract-hackathon-2025/) exploring morphogenetic neural cellular automata for growing tree-like structures.
+A submission for the [Tesseract Hackathon 2025](https://pasteurlabs.ai/tesseract-hackathon-2025/).
 
 ![Arborhedron Stained Glass Tree](notebooks/stained_glass_hero.png)
 
-## Vision
+## What This Is
 
-> *"Every tree is bonsai — a Platonic ideal geometric form shaped by environmental stress."*
+A differentiable simulation of tree growth over a growing season, where:
 
-Every tree in nature represents a perfect geometric form constrained by reality: soil irregularities, wind, asymmetric sunlight, drought, and genetic variation. This project uses differentiable simulation to explore how optimal morphogenetic rules adapt under perturbations, demonstrating the continuum between perfect form and adaptive resilience.
+- A **tree state** (energy, water, nutrients, roots, trunk, shoots, leaves, flowers, fruit) evolves over ~100 days
+- **Environmental stress** (light, moisture, wind) varies sinusoidally
+- A **neural network policy** decides how to allocate resources each day
+- **Fitness** is measured by seed production at season's end
+- Gradients flow end-to-end, enabling policy optimization via gradient descent
+
+The simulation is decomposed into composable **Tesseracts** that can be deployed and composed via Tesseract-JAX.
+
+## What This Is NOT
+
+This is **not** a Neural Cellular Automaton. There's no spatial grid, no local update rules, no emergent patterns from local interactions. It's a global ODE-style dynamical system with a learned controller.
 
 ## Features
 
-### Differentiable Growth Simulation
+### Differentiable Growth Dynamics
 
-A complete tree growth simulator built with JAX, modeling:
+Built with JAX, modeling:
 
-- **Resource economics**: Energy, water, and nutrient flows
-- **Structural dynamics**: Roots, trunk, shoots, leaves, flowers, and fruit
-- **Environmental stress**: Light, moisture, and wind with sinusoidal variation
-- **Biological constraints**: Transport bottlenecks, stomatal closure, self-shading
+- Resource economics (energy, water, nutrient flows)
+- Structural constraints (transport bottlenecks, self-shading)
+- Environmental response (stomatal closure, wind damage)
+- Reproduction (flowering, fruiting, seed production)
 
-The simulation is fully differentiable, enabling gradient-based optimization of growth policies.
+### Neural Allocation Policy
 
-### Neural Growth Policies
+An MLP that observes tree state + environment and outputs resource allocation fractions. Trainable via gradient descent on seed production.
 
-Train neural networks to allocate resources optimally across different climate conditions:
+### Tesseract Composition
 
-- MLP-based allocation policies
-- Features derived from tree state and environment
-- Training via gradient descent on seed production
+Three Tesseracts that compose into a differentiable pipeline:
 
-### Stained Glass Visualization
+```
+neural_policy → growth_step → seed_production
+     ↑              │
+     └──────────────┘ (loop N days)
+```
 
-Beautiful L-system tree rendering with:
+### Visualization
 
-- Recursive branching structures
-- Equal-area vein panel leaf geometry
-- Blossoms and fruit
-- Stress-responsive morphology (leaf color, density, form)
+L-system tree rendering with stained-glass style leaves and blossoms.
 
 ![Tree Gallery](notebooks/tree_gallery.png)
 
-## Tesseract Architecture
-
-The simulation is decomposed into three composable, differentiable Tesseracts:
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  neural_policy  │────▶│   growth_step   │────▶│ seed_production │
-│                 │     │                 │     │                 │
-│ state + env     │     │ state + alloc   │     │ fruit_integral  │
-│ + weights       │     │ + env           │     │ + final_energy  │
-│       ↓         │     │       ↓         │     │       ↓         │
-│  allocation     │     │   new_state     │     │     seeds       │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-        ▲                       │
-        └───────────────────────┘
-              (loop 100 days)
-```
-
-### Tesseracts
-
-| Tesseract | Description | Differentiable Inputs |
-|-----------|-------------|----------------------|
-| `growth_step` | Single day tree growth dynamics | state, allocation, environment |
-| `neural_policy` | MLP-based allocation policy | state, environment, weights |
-| `seed_production` | Fitness: fruit integral → seeds | fruit_integral, final_energy |
-
-Gradients flow through all three Tesseracts, enabling end-to-end optimization of policy weights via gradient descent.
-
-## Project Structure
-
-```
-arborhedron/
-├── sim/                    # Core simulation module
-│   ├── config.py           # Configuration dataclasses
-│   ├── dynamics.py         # Growth step logic
-│   ├── stress.py           # Environmental signal generation
-│   ├── surrogates.py       # Biological surrogate functions
-│   ├── policies.py         # Allocation policies (neural + baseline)
-│   ├── rollout.py          # Full season simulation
-│   ├── stained_glass.py    # L-system tree visualization
-│   └── visualization.py    # Plotting utilities
-├── tesseracts/             # Tesseract definitions
-│   ├── growth_step/        # Single-day growth dynamics
-│   ├── neural_policy/      # Neural network allocation
-│   └── seed_production/    # Fitness computation
-├── notebooks/              # Jupyter notebooks
-│   ├── 01_surrogates.ipynb         # Surrogate function exploration
-│   ├── 02_rollout_baseline.ipynb   # Baseline policy testing
-│   ├── 03A_gradient_optimization.ipynb  # Gradient-based training
-│   ├── 03B_wind_trunk_experiment.ipynb  # Wind response analysis
-│   ├── 03C_trunk_investigation.ipynb    # Structural dynamics
-│   ├── 04_neural_policy.ipynb      # Neural policy training
-│   ├── 05_robust_evaluation.ipynb  # Cross-climate evaluation
-│   ├── 06_geometric_skeleton.ipynb # Stained glass rendering
-│   └── 07_climate_morphology.ipynb # Stress-morphology mapping
-├── tests/                  # Test suite
-└── main.py                 # Tesseract composition demo
-```
-
 ## Installation
 
-### Prerequisites
-
-- Python 3.10+
-- Docker (for Tesseract builds)
-
-### Setup
-
 ```bash
-# Clone the repository
 git clone https://github.com/ndouglas/arborhedron.git
 cd arborhedron
-
-# Create virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 
-# Build Tesseracts
+# Build Tesseracts (requires Docker)
 ./buildall.sh
 ```
 
-### Run the Tesseract Pipeline
+## Usage
+
+### Run the Tesseract pipeline
 
 ```bash
 python main.py
 ```
 
-This demonstrates:
-1. Composing three Tesseracts into a differentiable pipeline
-2. Running a full growing season simulation
-3. Computing gradients of fitness w.r.t. policy weights
-4. Performing gradient descent optimization
-
-## Usage
-
-### Run a simulation
+### Run the simulation directly
 
 ```python
 from sim import SimConfig, ClimateConfig, TreeState, run_season
 
-# Configure simulation
 config = SimConfig()
 climate = ClimateConfig.mild()
-initial_state = TreeState.seedling()
+initial_state = TreeState.initial()
 
-# Run a growing season
 trajectory = run_season(initial_state, climate, config)
-print(f"Final flowers: {trajectory.states[-1].flowers:.2f}")
 print(f"Seeds produced: {trajectory.seeds:.2f}")
 ```
 
-### Train a neural policy
-
-```python
-from sim import NeuralPolicy, make_neural_policy_fn
-import jax.random as jr
-
-# Initialize policy
-key = jr.PRNGKey(42)
-policy = NeuralPolicy.init(key, hidden_size=32)
-
-# Create allocation function
-allocate = make_neural_policy_fn(policy)
-
-# Use in simulation
-trajectory = run_season(initial_state, climate, config, policy_fn=allocate)
-```
-
-### Render a stained glass tree
+### Render a tree
 
 ```python
 from sim import generate_tree_skeleton, render_tree, TreeParams, TreeStyle
 
-# Generate tree structure
-params = TreeParams(depth=4, branch_angle=0.4)
+params = TreeParams(depth=4)
 skeleton = generate_tree_skeleton(params, seed=42)
-
-# Render with style
-style = TreeStyle()
-fig = render_tree(skeleton, style)
-fig.savefig("my_tree.png", dpi=150)
+fig = render_tree(skeleton, TreeStyle())
+fig.savefig("tree.png")
 ```
 
-## Key Concepts
+## Project Structure
 
-### Growth Dynamics
-
-Each simulation step models:
-
-1. **Root uptake** — Water and nutrients from soil
-2. **Transport** — Trunk limits resource delivery (bottleneck)
-3. **Photosynthesis** — Energy production with self-shading
-4. **Stomatal regulation** — Water conservation under drought
-5. **Maintenance** — Costs proportional to biomass
-6. **Allocation** — Policy decides investment distribution
-7. **Growth** — New biomass from invested energy
-8. **Damage** — Wind, drought stress on tender tissues
-9. **Reproduction** — Flowers convert to fruit under maturity
-
-### Environmental Stress
-
-Three stress signals vary sinusoidally over the growing season:
-
-- **Light** — Solar availability for photosynthesis
-- **Moisture** — Soil water for uptake (inverted-U response)
-- **Wind** — Mechanical stress on shoots, leaves, flowers
-
-### Stabilization Mechanisms
-
-The simulation includes biologically-motivated constraints:
-
-- **Self-shading** (Beer-Lambert law) prevents runaway leaf growth
-- **Transport bottleneck** requires trunk investment
-- **Stomatal closure** conserves water under drought
-- **Leaf crowding** requires shoot scaffolding
-- **Flower gating** prevents premature reproduction
+```
+arborhedron/
+├── sim/                    # Core simulation
+│   ├── config.py           # State and config definitions
+│   ├── dynamics.py         # Growth step logic
+│   ├── surrogates.py       # Biological response functions
+│   ├── policies.py         # Allocation policies
+│   ├── rollout.py          # Season simulation
+│   └── stained_glass.py    # Tree visualization
+├── tesseracts/             # Tesseract definitions
+│   ├── growth_step/        # Single-day dynamics
+│   ├── neural_policy/      # Allocation policy
+│   └── seed_production/    # Fitness computation
+├── notebooks/              # Exploration notebooks
+├── tests/                  # Test suite
+└── main.py                 # Tesseract composition demo
+```
 
 ## Resources
 
-- [Tesseract Core Documentation](https://docs.pasteurlabs.ai/projects/tesseract-core/latest/)
+- [Tesseract Core](https://docs.pasteurlabs.ai/projects/tesseract-core/latest/)
 - [Tesseract-JAX](https://github.com/pasteurlabs/tesseract-jax)
-- [Tesseract User Forums](https://si-tesseract.discourse.group/)
-- [Growing Neural Cellular Automata](https://distill.pub/2020/growing-ca/) — Inspiration
 
 ## License
 
-Apache License 2.0 — See [LICENSE](LICENSE) for details.
+Apache License 2.0
