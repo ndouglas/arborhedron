@@ -5,7 +5,7 @@
 
 **Differentiable tree growth simulation for climate-resilient reforestation planning**
 
-A submission for the [Tesseract Hackathon 2025](https://pasteurlabs.ai/tesseract-hackathon-2025/).
+Originally intended as a submission for the [Tesseract Hackathon 2025](https://pasteurlabs.ai/tesseract-hackathon-2025/).
 
 ![Arborhedron Stained Glass Tree](notebooks/stained_glass_hero.png)
 
@@ -33,6 +33,8 @@ Trees are critical for climate mitigation (carbon sequestration) and adaptation 
 
 Arborhedron addresses these questions with a differentiable framework that exposes gradients for both optimization and sensitivity analysis.
 
+See the [Technical Writeup](./docs/technical_writeup.md) for more details.
+
 ## Features
 
 ### Differentiable Growth Dynamics
@@ -52,13 +54,13 @@ An MLP that observes tree state + environment and outputs resource allocation fr
 
 Biomass is converted to carbon content using tissue-specific fractions, then weighted by permanence:
 
-| Tissue | Carbon Fraction | Permanence |
-|--------|-----------------|------------|
-| Trunk | 0.50 | 1.0 |
-| Roots | 0.45 | 0.7 |
-| Shoots | 0.45 | 0.3 |
-| Leaves | 0.45 | 0.1 |
-| Flowers | 0.40 | 0.05 |
+| Tissue  | Carbon Fraction | Permanence |
+| ------- | --------------- | ---------- |
+| Trunk   | 0.50            | 1.0        |
+| Roots   | 0.45            | 0.7        |
+| Shoots  | 0.45            | 0.3        |
+| Leaves  | 0.45            | 0.1        |
+| Flowers | 0.40            | 0.05       |
 
 The permanence-weighted carbon score rewards durable carbon storage (trunk wood persists for decades; leaves decompose within a year).
 
@@ -93,10 +95,10 @@ L-system tree rendering with stained-glass style leaves and blossoms.
 
 Neural policies trained for different objectives reveal a fundamental tradeoff:
 
-| Policy | Carbon Integral | Seeds Produced |
-|--------|-----------------|----------------|
-| **Carbon-Optimized** | 66.44 | 0.00 |
-| **Seed-Optimized** | 49.02 | 1.63 |
+| Policy               | Carbon Integral | Seeds Produced |
+| -------------------- | --------------- | -------------- |
+| **Carbon-Optimized** | 66.44           | 0.00           |
+| **Seed-Optimized**   | 49.02           | 1.63           |
 
 The carbon-optimized policy achieves **35% more carbon sequestration** by investing heavily in trunk wood, but produces zero seeds. This mirrors real forestry decisions between fast-growing species (more seeds, less durable wood) and slow-growing hardwoods (fewer seeds, centuries of carbon storage).
 
